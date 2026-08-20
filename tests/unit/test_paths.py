@@ -96,3 +96,28 @@ def test_an_explicit_path_is_never_second_guessed(tmp_path: Path):
     target = tmp_path / "explicit"
     target.mkdir()
     assert QaPaths(root=target).root == target
+
+
+def test_no_user_facing_string_names_a_command_that_does_not_exist():
+    """Regression guard for the rename.
+
+    68 strings across the CLI, MCP server, web UI, and generated file headers
+    told users to run `qa …` after the binary became `trout`. Every one of them
+    named a command that does not exist, and nothing caught it because they are
+    all just strings.
+    """
+    import re
+
+    source = Path(__file__).resolve().parents[2] / "src" / "testtrout"
+    stale = re.compile(
+        r"\bqa (?=scan|init|probe|intent|gaps|propose|approve|generate|run|"
+        r"certify|report|doctor|web|mcp|surfaces|scenarios|providers)"
+    )
+    offenders = [
+        f"{path.relative_to(source)}:{number}"
+        for path in source.rglob("*")
+        if path.is_file() and path.suffix in {".py", ".html", ".md"}
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if stale.search(line)
+    ]
+    assert offenders == [], f"stale `qa` command references: {offenders}"

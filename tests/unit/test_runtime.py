@@ -228,7 +228,7 @@ def test_a_run_with_nothing_generated_says_what_to_do(tmp_path: Path):
         tmp_path / "runs",
     )
     assert record.status is RunStatus.INCONCLUSIVE
-    assert any("qa generate" in note for note in record.notes)
+    assert any("trout generate" in note for note in record.notes)
 
 
 def test_a_missing_toolchain_is_inconclusive_not_a_failure(tmp_path: Path):
