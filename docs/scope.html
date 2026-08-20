@@ -1,0 +1,386 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TestTrout — Product Specification</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 18mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10.2pt; line-height: 1.55; color: #2b3440; margin: 0; }
+  h1 { font-size: 27pt; font-weight: 400; color: #1c3d5a; text-align: center; margin: 0 0 6px 0; letter-spacing: -0.4px; }
+  .subtitle { text-align: center; color: #5a6b7c; font-size: 11pt; margin: 0 0 26px 0; }
+  h2 { font-size: 16pt; font-weight: 400; color: #1c3d5a; margin: 26px 0 9px 0; letter-spacing: -0.2px; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; font-weight: 400; color: #3d7ea6; margin: 17px 0 6px 0; page-break-after: avoid; }
+  p { margin: 0 0 9px 0; }
+  ul { margin: 0 0 10px 0; padding-left: 15px; list-style: none; }
+  li { margin: 0 0 4.5px 0; position: relative; padding-left: 9px; }
+  li:before { content: "\00b7"; position: absolute; left: -3px; color: #3d7ea6; font-weight: 700; }
+  ol { margin: 0 0 10px 0; padding-left: 20px; }
+  ol li { padding-left: 2px; }
+  ol li:before { content: none; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.6pt; background: #eef2f6; padding: 0 3px; border-radius: 2px; }
+  pre { background: #eff3f7; padding: 11px 14px; margin: 8px 0 12px 0; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.2pt; line-height: 1.5; color: #2b3440; white-space: pre; overflow: hidden; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  table { width: 100%; border-collapse: collapse; margin: 9px 0 13px 0; font-size: 9pt; page-break-inside: avoid; }
+  th { background: #1c3d5a; color: #fff; font-weight: 400; text-align: left; padding: 6px 9px; font-size: 9pt; }
+  td { padding: 5px 9px; border-bottom: 1px solid #dde4ea; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  .note { border-left: 2.5px solid #3d7ea6; padding: 2px 0 2px 11px; margin: 10px 0 12px 0; color: #3f4d5c; }
+  strong { font-weight: 600; color: #1c3d5a; }
+  .tight li { margin-bottom: 2.5px; }
+</style>
+</head>
+<body>
+
+<h1>TestTrout</h1>
+<p class="subtitle">Product Specification &mdash; Automated Regression Testing for AI-Built Web Applications</p>
+
+<p><strong>Document purpose:</strong> A build-ready scope for an open-source regression testing tool. This document is intended to be passed to an implementation agent.</p>
+
+<p><strong>Core promise:</strong> Point the tool at a repository and a deployed URL. It reads the codebase, connects to the running application, asks what matters, and writes a baseline test suite that covers the product&rsquo;s real behavior &mdash; runnable on demand, with evidence behind every result. Once that baseline exists, it becomes the thing that stops broken code from shipping.</p>
+
+<h2>1. Product Definition</h2>
+
+<p>TestTrout establishes and maintains a functional regression baseline for a web application, and runs it on demand against a real deployment.</p>
+
+<p>Two lifecycles:</p>
+<ul>
+<li><strong>Baseline establishment.</strong> The tool analyses the repository, connects to a running deployment, interviews the developer about what must never break, and proposes a ranked inventory of tests. Approved scenarios are authored, executed against the real application, and certified as deterministic. That certified set is the baseline.</li>
+<li><strong>Regression guarding.</strong> The baseline runs on demand today, and on every pull request once the GitHub integration lands. Failures are classified against a known-good comparison, with evidence and a suggested fix.</li>
+</ul>
+
+<p><strong>Primary user:</strong> a developer or small team shipping a web application built with Lovable, v0, Bolt, or by hand, deployed on Vercel or similar, typically with Supabase as the backend &mdash; and with no test suite whatsoever.</p>
+
+<p><strong>Primary objective:</strong> prevent the shipping of code that breaks working behavior. Validation of new features is a secondary, opt-in capability that activates only when the developer supplies acceptance criteria.</p>
+
+<p><strong>Distribution:</strong> open source under Apache 2.0. Implemented in Python, targeting TypeScript/React codebases. Usable as a CLI, as a Claude Code skill, and through a local web interface.</p>
+
+<h2>2. Target Stack</h2>
+
+<p>The tool is deliberately narrow. Depth on one stack beats shallow coverage of many, and the target stack is unusually regular because much of it is machine-generated from a small number of templates &mdash; which is precisely what makes accurate static analysis possible.</p>
+
+<table>
+<tr><th>Layer</th><th>Supported in MVP</th></tr>
+<tr><td>Frontend</td><td>React with Vite (Lovable, Bolt, v0 output) and Next.js App Router</td></tr>
+<tr><td>Language</td><td>TypeScript and TSX</td></tr>
+<tr><td>Backend</td><td>Supabase (Postgres, Auth, Storage, Edge Functions, RLS); Next.js Route Handlers and Server Actions</td></tr>
+<tr><td>Auth</td><td>Supabase Auth, Clerk, NextAuth</td></tr>
+<tr><td>Deployment</td><td>Vercel, Netlify, Lovable hosting, or a local dev server</td></tr>
+<tr><td>Third-party</td><td>Stripe, Resend, OpenAI and similar SDKs &mdash; detected and substituted, not exercised</td></tr>
+</table>
+
+<p class="note">The defining characteristic of this stack: a large share of the application&rsquo;s backend behavior is expressed as Supabase client calls made directly from React components. There is frequently no API layer at all. Any tool that models the product surface as &ldquo;HTTP route to handler&rdquo; finds nothing here.</p>
+
+<h2>3. Design Commitments</h2>
+
+<ul>
+<li><strong>The deployment already exists.</strong> The tool connects to a running application; it does not orchestrate containers, boot services, or reconstruct an environment. This removes the single largest source of failure in tools of this kind.</li>
+<li><strong>Tests exercise the running product through its real interface.</strong> For this stack that is predominantly the browser, because that is where the behavior lives. API-level and database-level scenarios are used where a real seam exists.</li>
+<li><strong>The baseline encodes known-good behavior.</strong> A scenario certified green against a working deployment asserts how the product behaved before a change. Tests derived only from changed code assert the new behavior as correct by construction and are never treated as regression evidence.</li>
+<li><strong>Every claim carries evidence.</strong> A pass names the scenarios that ran and what they asserted. A failure carries the browser trace, screenshots, network log, console output, database state, and a reproduction command. There is no single opaque quality score.</li>
+<li><strong>Every expectation has provenance:</strong> approved scenario, database schema or RLS policy, API schema, stated acceptance criteria, explicit developer instruction, behavior observed against a working deployment, or model inference. Inference alone never blocks.</li>
+<li><strong>Deterministic core, model at the edges.</strong> Code analysis, execution, state management, classification, and policy are deterministic and testable without an API key. The model interprets intent, proposes scenarios, authors test code, and explains failures. Nothing else.</li>
+<li><strong>Determinism is engineered.</strong> Seeded data, reset between scenarios, stable selectors, explicit waits on observable state, substituted third parties. A scenario that cannot be stabilised is quarantined, not admitted.</li>
+<li><strong>Human approval gates the suite.</strong> Proposed scenarios, baseline updates, and suggested fixes are reviewed by a person. The tool never writes to a source branch and never applies a fix.</li>
+<li><strong>Destructive operations require consent.</strong> The tool refuses to run mutating scenarios against a deployment not explicitly marked as disposable.</li>
+<li><strong>All state is human-readable and version-controlled.</strong> Intent, surfaces, scenarios, mock contracts, and results live in a <code>.trout/</code> directory as YAML the developer owns and can edit by hand.</li>
+</ul>
+
+<h2>4. Stack Comprehension</h2>
+
+<p>Analysis is entirely deterministic &mdash; tree-sitter over TypeScript and TSX, plus SQL migration parsing. No model involvement, so it is fast, free, offline, and verifiable against committed golden files.</p>
+
+<h3>What counts as a surface</h3>
+<ul class="tight">
+<li><strong>Screens</strong> &mdash; React Router routes or Next.js App Router segments, and the component tree behind each.</li>
+<li><strong>Data operations</strong> &mdash; Supabase client calls, with the table, operation, filters, and columns resolved statically: <code>.select()</code>, <code>.insert()</code>, <code>.update()</code>, <code>.delete()</code>, <code>.rpc()</code>.</li>
+<li><strong>Server endpoints</strong> &mdash; Next.js Route Handlers, Server Actions marked <code>'use server'</code>, and Supabase Edge Functions.</li>
+<li><strong>Authorization policies</strong> &mdash; row-level security policies parsed from <code>supabase/migrations/</code>, with the tables and roles they govern.</li>
+<li><strong>Schema</strong> &mdash; tables, columns, constraints, foreign keys, and enums.</li>
+<li><strong>Auth boundaries</strong> &mdash; protected routes, session guards, role checks.</li>
+<li><strong>External dependencies</strong> &mdash; third-party SDK call sites, which become the substitution boundary.</li>
+</ul>
+
+<p>Each surface is emitted with its source location, the screens that reach it, and a criticality prior derived from whether it writes data, sits behind authentication, or touches payments.</p>
+
+<p>Output is <code>.trout/surfaces.yaml</code>: a complete, inspectable map of what the application does. It is useful on its own, before any test exists.</p>
+
+<h2>5. Test Philosophy and the Substitution Boundary</h2>
+
+<h3>Scenario tiers</h3>
+<ul>
+<li><strong>Browser scenarios (primary).</strong> Playwright against the deployed application. For a React application talking directly to Supabase, this is the only place the behavior is observable end to end. This is the bulk of the suite, which makes selector stability and wait discipline load-bearing rather than incidental.</li>
+<li><strong>Authorization scenarios.</strong> Generated directly from RLS policies and schema: assert that one user cannot read, modify, or delete another user&rsquo;s rows, and that anonymous access is refused where policy says it must be. Cheap to generate, near-impossible for these teams to write themselves, and the failure class that hurts them most.</li>
+<li><strong>Endpoint scenarios.</strong> Direct HTTP against Route Handlers, Server Actions, and Edge Functions where they exist. Fast and stable; used wherever a real seam is available.</li>
+</ul>
+
+<h3>Real, always</h3>
+<ul class="tight">
+<li>The deployed application, exactly as users receive it.</li>
+<li>Supabase &mdash; real Postgres, real migrations, real RLS, real Auth. Substituting the database would defeat the purpose, since authorization and data integrity are the behavior under test.</li>
+<li>Authentication, using seeded test users.</li>
+</ul>
+
+<h3>Substituted by policy</h3>
+<ul class="tight">
+<li>Third-party APIs that cost money, cause irreversible side effects, or are nondeterministic &mdash; payments, transactional email and SMS, model APIs.</li>
+<li>Substitution happens at the network layer. An outbound request matching no contract is a <strong>contract mismatch</strong> and fails the scenario. It is never a silent pass; that is how functional suites come to lie.</li>
+</ul>
+
+<h3>State isolation</h3>
+<p>The hardest remaining problem, and the one that replaces environment orchestration as the primary technical risk. Supported strategies, in order of preference:</p>
+<ol>
+<li><strong>Local Supabase</strong> &mdash; <code>supabase db reset</code> plus seed, giving complete isolation.</li>
+<li><strong>Database branch</strong> &mdash; an ephemeral branch per run against a hosted project.</li>
+<li><strong>Scoped seed and cleanup</strong> &mdash; every scenario creates its own data under a run-scoped namespace and removes it afterwards. The only option against a shared deployment, and the reason concurrent runs must be namespaced.</li>
+</ol>
+
+<h2>6. Deployment Connection and Authentication</h2>
+
+<p>The tool is told about one or more entrypoints. There may be several &mdash; a local dev server, a preview deployment, and production &mdash; and each carries its own safety posture.</p>
+
+<p>Each entrypoint declares its kind (web application, endpoint base, or edge function host), its URL, whether it is disposable, and which operations are permitted against it. Production is read-only unless explicitly and repeatedly confirmed.</p>
+
+<h3>Authentication</h3>
+<p>Every application in this category is behind a login wall, which makes authentication the first practical obstacle rather than a detail. It is a first-class component with an adapter per provider:</p>
+<ul class="tight">
+<li><strong>Supabase Auth</strong> &mdash; seeded test users, password sign-in, or a service-role-minted session.</li>
+<li><strong>Clerk</strong> and <strong>NextAuth</strong> &mdash; provider-specific sign-in flows.</li>
+<li>Sessions are captured once as browser storage state and reused across scenarios, with per-role sessions for authorization testing.</li>
+</ul>
+
+<h3>Live probe</h3>
+<p>With a session established, the tool explores the running application read-only: loads reachable screens, records the DOM structure and stable selector candidates, and captures the Supabase and third-party network traffic each screen produces. Mutating interactions require explicit consent.</p>
+
+<p>The probe is then reconciled against the static scan: screens in code that could not be reached, queries firing that the scan did not predict, policy denials, and console errors. This reconciliation is what grounds generated scenarios in observed behavior rather than inference.</p>
+
+<h2>7. Baseline Establishment</h2>
+
+<h3>A. Intent capture</h3>
+<p>A conversation, not a form. What does this product do, who uses it, what must never break, what would be worst if it silently stopped working. Answers are structured into journeys and criticality tiers, shown back for confirmation, and stored as a versioned intent document. The tool asks follow-up questions where the repository is ambiguous &mdash; an unfamiliar table, a screen it could not reach, an operation with no obvious trigger.</p>
+
+<h3>B. Gap map</h3>
+<p>Surfaces joined against observed behavior and any existing tests, ranked by criticality. For this stack the ranking has strong free priors: write operations, anything behind authentication, anything touching payments, and every RLS policy rank high automatically.</p>
+
+<h3>C. Proposed test inventory</h3>
+<p>A ranked, reviewable list. Each item states the surface it protects, the behavior to assert, the scenario in given/when/then form, the test data it needs, the dependencies to be substituted, its estimated runtime, and the provenance of the expectation. The developer approves, edits, defers, or rejects. Nothing is authored without approval.</p>
+
+<h3>D. Authoring</h3>
+<p>Approved items become scenario specifications in YAML &mdash; the durable artifact &mdash; which compile to runnable Playwright or endpoint test code. Keeping the specification separate from the emitted code means tests can be regenerated, retargeted, or reviewed without redoing the analysis.</p>
+
+<h3>E. Certification</h3>
+<p>A scenario enters the baseline only after passing a configurable number of consecutive runs, three by default. Scenarios that cannot be stabilised are quarantined with a diagnosis rather than admitted and later ignored.</p>
+
+<h3>F. Baseline report</h3>
+<p>Surface coverage before and after, what is now protected, what remains knowingly unprotected and why, total suite runtime, and the remaining ranked backlog. Onboarding is incremental; nobody approves two hundred scenarios on day one.</p>
+
+<h2>8. Running the Baseline</h2>
+
+<p>Runs are on demand in the MVP: the whole suite, a tagged subset, or a single scenario, against any configured entrypoint.</p>
+
+<ul class="tight">
+<li>Results stream as each scenario completes rather than arriving as a batch at the end.</li>
+<li>Every failure produces an evidence bundle: browser trace, screenshot and video, network log, console output, relevant database state, and a single-command reproduction.</li>
+<li>Failures are classified deterministically where possible &mdash; contract mismatch, authentication failure, deployment unreachable, timeout, assertion failure &mdash; and explained by the model only once classified.</li>
+<li>Nondeterministic scenarios are quarantined automatically, excluded from the blocking set, and assigned a repair task.</li>
+<li>Per-scenario coverage is recorded from the first release, ahead of the risk-based selection that consumes it.</li>
+</ul>
+
+<h2>9. Coverage Model</h2>
+
+<p>Line coverage is a poor fit for a browser-driven suite against a deployed application. What is reported instead:</p>
+<ul class="tight">
+<li><strong>Surface coverage</strong> &mdash; the fraction of screens, data operations, and endpoints with a passing certified scenario, weighted by criticality. The headline metric.</li>
+<li><strong>Journey coverage</strong> &mdash; the fraction of intent-declared journeys covered end to end.</li>
+<li><strong>Policy coverage</strong> &mdash; the fraction of RLS policies with an authorization scenario asserting them.</li>
+<li><strong>Data operation coverage</strong> &mdash; which tables and operations are exercised, and which writes are entirely unprotected.</li>
+<li><strong>Substitution coverage</strong> &mdash; which third-party dependencies have contracts and which are unguarded.</li>
+</ul>
+
+<h2>10. Interfaces</h2>
+
+<p>One engine, three front ends. The CLI is the complete interface; everything else is a view onto the same <code>.trout/</code> state, so no capability is exclusive to a single surface.</p>
+
+<h3>Command line</h3>
+<pre><code>qa scan [path]        Analyse the repository — screens, data operations,
+                      endpoints, policies, schema. No API key required.
+qa surfaces           List and filter what the scan found.
+qa init               Configure entrypoints, authentication, safety posture.
+qa probe              Explore the running deployment and reconcile with the scan.
+qa intent             Capture what the product does and what must never break.
+qa gaps               Ranked report of the tests this application is missing.
+qa propose            Draft scenarios for review.
+qa approve &lt;id&gt;...    Accept proposals into the baseline.
+qa generate           Emit runnable test code from approved specifications.
+qa run                Execute the suite, a tag, or a single scenario.
+qa certify            Promote scenarios that pass N consecutive runs.
+qa report             Results and evidence from the last run.
+qa web                Start the local web interface.
+qa providers          Configure and inspect model providers.
+qa doctor             Diagnose configuration, connectivity, and auth.</code></pre>
+
+<p>Every command is non-interactive when given complete arguments and interactive when not, so the same tool serves a human at a terminal and an agent in a pipeline. Machine-readable output is available on every command via <code>--json</code>.</p>
+
+<h3>Claude Code skill</h3>
+<p>The repository ships a skill that teaches Claude Code to drive the CLI: when to scan, how to interpret a gap map, how to propose and approve scenarios, how to read an evidence bundle, and which operations require human confirmation. Because every command has a JSON mode and the entire state is plain YAML on disk, an agent can operate the tool end to end without screen-scraping terminal output.</p>
+
+<h3>Web interface</h3>
+<p><code>qa web</code> serves a local application over the same <code>.trout/</code> directory &mdash; no separate database, no cloud dependency, no divergence between what the CLI and the browser believe. It exists for the parts that are genuinely better with a screen: reviewing the surface map, working through the gap map, approving proposed scenarios, watching a run stream, and inspecting an evidence bundle with its screenshots, video, and network log.</p>
+
+<h2>11. Model Providers</h2>
+
+<p>Model access is provider-agnostic behind a single gateway. Three providers are supported at launch:</p>
+
+<table>
+<tr><th>Provider</th><th>Notes</th></tr>
+<tr><td>Anthropic</td><td>Claude models via the native API.</td></tr>
+<tr><td>OpenAI</td><td>GPT models via the OpenAI API.</td></tr>
+<tr><td>Kimi</td><td>Moonshot Kimi models via an OpenAI-compatible endpoint with a configurable base URL, which also covers self-hosted and foundry deployments.</td></tr>
+</table>
+
+<p>Provider and model are configured per repository and overridable per command. The gateway is the only component permitted to make model calls, which keeps three properties true: prompts live in versioned files rather than inline in business logic, every request and response is recorded to disk as a cassette, and the entire test suite of the tool itself runs offline against recorded cassettes with no API key.</p>
+
+<h2>12. Repository Configuration</h2>
+
+<pre><code>version: 1
+
+project:
+  framework: vite-react          # vite-react | nextjs-app
+  backend:   supabase
+  auth:      supabase
+
+entrypoints:
+  - name:       local
+    kind:       web
+    url:        http://localhost:5173
+    disposable: true
+  - name:       preview
+    kind:       web
+    url:        https://myapp-git-branch.vercel.app
+    disposable: true
+  - name:       production
+    kind:       web
+    url:        https://myapp.com
+    disposable: false
+    allow:      [read]           # mutating scenarios refused
+
+supabase:
+  url:        env:SUPABASE_URL
+  anon_key:   env:SUPABASE_ANON_KEY
+  migrations: supabase/migrations
+  isolation:  local_reset        # local_reset | branch | scoped_seed
+
+test_users:
+  - { role: owner,  email: env:QA_OWNER_EMAIL,  password: env:QA_OWNER_PW }
+  - { role: member, email: env:QA_MEMBER_EMAIL, password: env:QA_MEMBER_PW }
+
+substitution:
+  network:              deny
+  contracts:            .trout/contracts/
+  on_unmatched_request: fail
+  external:
+    - { name: stripe, match: api.stripe.com }
+    - { name: resend, match: api.resend.com }
+
+model:
+  provider: kimi                 # anthropic | openai | kimi
+  model:    kimi-k2
+  base_url: env:KIMI_BASE_URL
+  api_key:  env:KIMI_API_KEY
+
+run:
+  certification_runs: 3
+  parallel:           4
+  retries:            0
+  timeout_seconds:    60</code></pre>
+
+<h2>13. Security</h2>
+
+<ul>
+<li>Production entrypoints are read-only by default. Mutating scenarios against a deployment not marked disposable are refused, not warned about.</li>
+<li>Credentials are referenced by environment variable, never stored in <code>.trout/</code>, and redacted from logs, traces, screenshots, network captures, and model prompts.</li>
+<li>Test users are seeded and scoped. Service-role keys are used only for seeding and reset, never exposed to a browser context.</li>
+<li>Substituting third-party dependencies is also a security boundary: test runs cannot reach a real payment processor or mail provider.</li>
+<li>The model never controls shell execution, credential retrieval, repository writes, or destructive database operations. It proposes; deterministic components act.</li>
+<li>Nothing is transmitted anywhere except to the configured model provider. There is no telemetry unless explicitly enabled.</li>
+</ul>
+
+<h2>14. Components</h2>
+
+<table>
+<tr><th>Component</th><th>Responsibility</th><th>Model</th></tr>
+<tr><td>Scanner</td><td>Parses the repository into screens, data operations, endpoints, policies, and schema.</td><td>No</td></tr>
+<tr><td>Connector</td><td>Validates entrypoints, establishes authenticated sessions per role.</td><td>No</td></tr>
+<tr><td>Prober</td><td>Explores the running application, captures DOM and network behavior.</td><td>No</td></tr>
+<tr><td>Reconciler</td><td>Compares static analysis against observed behavior; reports divergence.</td><td>No</td></tr>
+<tr><td>Interviewer</td><td>Captures product intent and resolves ambiguity through questions.</td><td>Yes</td></tr>
+<tr><td>Gap analyser</td><td>Ranks unprotected surfaces by criticality.</td><td>No</td></tr>
+<tr><td>Proposer</td><td>Drafts scenario specifications from gaps and observations.</td><td>Yes</td></tr>
+<tr><td>Emitter</td><td>Compiles specifications into runnable test code.</td><td>Partial</td></tr>
+<tr><td>Runner</td><td>Executes scenarios, streams events, collects evidence.</td><td>No</td></tr>
+<tr><td>Isolator</td><td>Manages database state, seeding, and reset between scenarios.</td><td>No</td></tr>
+<tr><td>Substitution proxy</td><td>Intercepts outbound traffic and matches it against contracts.</td><td>No</td></tr>
+<tr><td>Classifier</td><td>Categorises failures deterministically; the model explains, never decides.</td><td>Partial</td></tr>
+<tr><td>Curator</td><td>Certification, quarantine, drift detection, suite cost.</td><td>No</td></tr>
+<tr><td>Gateway</td><td>The sole path to a model provider. Records cassettes.</td><td>&mdash;</td></tr>
+</table>
+
+<h2>15. Out of Scope</h2>
+
+<ul class="tight">
+<li>Pull-request integration in the MVP. It is the immediate next milestone, and the data model anticipates it.</li>
+<li>Any write access to the source branch, and automatic application of suggested fixes.</li>
+<li>Automatic test healing or baseline updates without human approval.</li>
+<li>Stacks outside the target in section 2. The adapter interfaces are public so others can extend it.</li>
+<li>Load testing, penetration testing, mobile-device testing, and visual-regression diffing.</li>
+<li>Complete browser and device matrices.</li>
+<li>Hosted or multi-tenant operation. The tool runs on a developer machine or in the user&rsquo;s own CI.</li>
+</ul>
+
+<h2>16. Implementation Plan</h2>
+
+<h3>Phase 0 &mdash; Foundation</h3>
+<p>Repository, licensing, and continuous integration. The domain model and the three adapter protocols &mdash; framework, authentication, emitter &mdash; documented as the contract contributors code against. The model gateway with all three providers and cassette record and replay. Two fixture applications used as both demonstration and integration test target. CLI skeleton and the Claude Code skill.</p>
+
+<h3>Phase 1 &mdash; Stack comprehension</h3>
+<p>tree-sitter analysis of TypeScript and TSX. Screens, Supabase data operations, Route Handlers, Server Actions, Edge Functions, RLS policies, schema, auth boundaries, third-party call sites. Golden-file tested against both fixtures. Delivers <code>qa scan</code>, which is useful before any test exists.</p>
+
+<h3>Phase 2 &mdash; Deployment connection</h3>
+<p>Entrypoint configuration and safety posture. Authentication adapters for Supabase Auth, Clerk, and NextAuth, with session capture and per-role reuse. Live probe and reconciliation against the scan. Delivers <code>qa init</code>, <code>qa probe</code>, and <code>qa doctor</code>.</p>
+
+<h3>Phase 3 &mdash; Intent and gaps</h3>
+<p>Conversational intent capture with ambiguity resolution, criticality ranking, and the gap map. Delivers <code>qa intent</code> and <code>qa gaps</code> &mdash; a ranked, reasoned inventory of the tests the application is missing.</p>
+
+<h3>Phase 4 &mdash; Scenario authoring</h3>
+<p>Scenario specifications, the review and approval loop, the Playwright emitter, the endpoint emitter, and the RLS authorization emitter. Selector strategy, including proposing test identifiers where the DOM offers nothing stable. Delivers <code>qa propose</code>, <code>qa approve</code>, and <code>qa generate</code>.</p>
+
+<h3>Phase 5 &mdash; Execution</h3>
+<p>The runner with streaming results and evidence collection. State isolation across all three strategies. The substitution proxy. Deterministic failure classification, certification, and quarantine. Per-scenario coverage recording. Delivers <code>qa run</code>, <code>qa certify</code>, and <code>qa report</code> &mdash; and completes the MVP.</p>
+
+<h3>Phase 6 &mdash; Web interface and release</h3>
+<p>The local web application over the same state, documentation, a quickstart that works in under ten minutes, and the first public release.</p>
+
+<h2>17. Definition of Done</h2>
+
+<p>The MVP is complete when a developer who has never seen the tool can:</p>
+<ol>
+<li>Point it at a local repository and receive an accurate map of every screen, data operation, endpoint, and policy in their application.</li>
+<li>Give it a deployed URL and test credentials, and have it authenticate and explore the running application.</li>
+<li>Answer a short conversation about what matters, and receive a ranked list of the tests they are missing with a reason for each.</li>
+<li>Approve a subset and receive working Playwright and authorization tests that pass against their real deployment.</li>
+<li>Run the suite on demand and receive streamed results, with an evidence bundle and a reproduction command behind every failure.</li>
+<li>Do all of the above from the command line, from Claude Code, or from a local web interface, against the model provider of their choice.</li>
+</ol>
+
+<h2>18. Next Milestone: Pull-Request Guarding</h2>
+
+<p>Deferred but designed for. The per-scenario coverage index recorded from the first release becomes the basis for risk-ranked selection, so the scenarios touching changed code run first. Vercel preview deployments remove the need to construct an environment for each pull request &mdash; the deployment already exists &mdash; leaving data isolation between concurrent runs as the problem to solve. Every failure is re-executed against a known-good deployment before it is called a regression. A deterministic policy engine converts results into a check status; the model recommends and explains, but never decides.</p>
+
+<h2>19. Product Principle</h2>
+
+<p>Optimize for trustworthy results, not maximum autonomy. A small suite that reliably protects the handful of behaviors an application depends on &mdash; and proves, with evidence, when one of them breaks &mdash; is worth more than a large one that generates uncertain tests nobody believes.</p>
+
+<p>The measure of success is regressions caught before shipping, with a false-positive rate low enough that the developer never considers turning it off.</p>
+
+</body>
+</html>

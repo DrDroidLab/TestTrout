@@ -1,0 +1,498 @@
+schema_version: 1
+project:
+  root: <root>
+  framework: vite-react
+  backend: supabase
+  auth: supabase
+  typescript: true
+  detected_from:
+    - 'package.json: vite + react'
+    - 'package.json: @supabase/supabase-js'
+    - inferred from Supabase backend
+screens:
+  - id: screen:/login
+    location:
+      file: src/App.tsx
+      line: 12
+      symbol: Login
+    criticality: critical
+    criticality_reasons:
+      - reaches 1 data operation(s)
+    kind: screen
+    path: /login
+    component: Login
+    params: []
+    layout: src/pages/Login.tsx
+    reaches:
+      - auth:signInWithPassword
+  - id: screen:/orders
+    location:
+      file: src/App.tsx
+      line: 13
+      symbol: Orders
+    criticality: high
+    criticality_reasons:
+      - reaches 1 data operation(s)
+    kind: screen
+    path: /orders
+    component: Orders
+    params: []
+    layout: src/pages/Orders.tsx
+    reaches:
+      - data:orders.select
+  - id: screen:/orders/:id
+    location:
+      file: src/App.tsx
+      line: 14
+      symbol: OrderDetail
+    criticality: critical
+    criticality_reasons:
+      - reaches 5 data operation(s)
+      - including 4 that write data
+    kind: screen
+    path: /orders/:id
+    component: OrderDetail
+    params:
+      - id
+    layout: src/pages/OrderDetail.tsx
+    reaches:
+      - data:orders.delete
+      - data:orders.select@load
+      - data:orders.update
+      - data:payments.insert
+      - rpc:recalculate_order_total
+  - id: screen:/checkout
+    location:
+      file: src/App.tsx
+      line: 15
+      symbol: Checkout
+    criticality: high
+    criticality_reasons:
+      - reaches 2 data operation(s)
+      - including 2 that write data
+    kind: screen
+    path: /checkout
+    component: Checkout
+    params: []
+    layout: src/pages/Checkout.tsx
+    reaches:
+      - data:orders.update@pay
+      - data:payments.insert@pay
+  - id: screen:/settings
+    location:
+      file: src/App.tsx
+      line: 16
+      symbol: Settings
+    criticality: high
+    criticality_reasons:
+      - reaches 3 data operation(s)
+      - including 2 that write data
+    kind: screen
+    path: /settings
+    component: Settings
+    params: []
+    layout: src/pages/Settings.tsx
+    reaches:
+      - data:profiles.select
+      - data:profiles.update
+      - storage:avatars.upload
+data_operations:
+  - id: data:payments.insert
+    location:
+      file: src/components/OrderActions.tsx
+      line: 5
+      end_line: 5
+      symbol: refund
+    criticality: high
+    criticality_reasons:
+      - writes data (insert)
+      - table 'payments' holds sensitive or financial data
+    kind: data_operation
+    table: payments
+    operation: insert
+    columns:
+      - order_id
+      - amount
+      - kind
+    filters: []
+    in_component: refund
+  - id: data:orders.update
+    location:
+      file: src/components/OrderActions.tsx
+      line: 6
+      end_line: 6
+      symbol: refund
+    criticality: high
+    criticality_reasons:
+      - writes data (update)
+      - table 'orders' holds sensitive or financial data
+    kind: data_operation
+    table: orders
+    operation: update
+    columns:
+      - status
+    filters:
+      - eq(id)
+    in_component: refund
+  - id: data:orders.delete
+    location:
+      file: src/components/OrderActions.tsx
+      line: 10
+      end_line: 10
+      symbol: remove
+    criticality: critical
+    criticality_reasons:
+      - deletes data — failure is not recoverable by the user
+      - table 'orders' holds sensitive or financial data
+    kind: data_operation
+    table: orders
+    operation: delete
+    columns: []
+    filters:
+      - eq(id)
+    in_component: remove
+  - id: rpc:recalculate_order_total
+    location:
+      file: src/components/OrderActions.tsx
+      line: 14
+      end_line: 14
+      symbol: recalc
+    criticality: high
+    criticality_reasons:
+      - writes data (rpc)
+    kind: data_operation
+    operation: rpc
+    columns: []
+    filters: []
+    function: recalculate_order_total
+    in_component: recalc
+  - id: data:orders.select
+    location:
+      file: src/components/OrderList.tsx
+      line: 9
+      end_line: 14
+      symbol: load
+    criticality: high
+    criticality_reasons:
+      - reads data
+      - table 'orders' holds sensitive or financial data
+    kind: data_operation
+    table: orders
+    operation: select
+    columns:
+      - id
+      - total
+      - status
+      - customer:profiles(name)
+    filters:
+      - eq(status)
+      - order(created_at)
+      - limit(...)
+    in_component: load
+  - id: data:profiles.select
+    location:
+      file: src/hooks/useProfile.ts
+      line: 5
+      end_line: 5
+      symbol: load
+    criticality: high
+    criticality_reasons:
+      - reads data
+      - table 'profiles' holds sensitive or financial data
+    kind: data_operation
+    table: profiles
+    operation: select
+    columns:
+      - id
+      - name
+      - email
+    filters:
+      - eq(id)
+      - single
+    in_component: load
+  - id: data:profiles.update
+    location:
+      file: src/hooks/useProfile.ts
+      line: 10
+      end_line: 10
+      symbol: save
+    criticality: high
+    criticality_reasons:
+      - writes data (update)
+      - table 'profiles' holds sensitive or financial data
+    kind: data_operation
+    table: profiles
+    operation: update
+    columns: []
+    filters:
+      - eq(id)
+    in_component: save
+  - id: storage:avatars.upload
+    location:
+      file: src/hooks/useProfile.ts
+      line: 14
+      end_line: 14
+      symbol: uploadAvatar
+    criticality: high
+    criticality_reasons:
+      - writes data (storage)
+    kind: data_operation
+    operation: storage
+    columns: []
+    filters: []
+    function: upload
+    bucket: avatars
+    in_component: uploadAvatar
+  - id: data:payments.insert@pay
+    location:
+      file: src/pages/Checkout.tsx
+      line: 9
+      end_line: 9
+      symbol: pay
+    criticality: high
+    criticality_reasons:
+      - writes data (insert)
+      - table 'payments' holds sensitive or financial data
+    kind: data_operation
+    table: payments
+    operation: insert
+    columns:
+      - order_id
+      - kind
+    filters: []
+    in_component: pay
+  - id: data:orders.update@pay
+    location:
+      file: src/pages/Checkout.tsx
+      line: 10
+      end_line: 10
+      symbol: pay
+    criticality: high
+    criticality_reasons:
+      - writes data (update)
+      - table 'orders' holds sensitive or financial data
+    kind: data_operation
+    table: orders
+    operation: update
+    columns:
+      - status
+    filters:
+      - eq(id)
+    in_component: pay
+  - id: auth:signInWithPassword
+    location:
+      file: src/pages/Login.tsx
+      line: 9
+      end_line: 9
+      symbol: signIn
+    criticality: critical
+    criticality_reasons:
+      - authentication — a break locks every user out
+    kind: data_operation
+    operation: auth
+    columns: []
+    filters: []
+    function: signInWithPassword
+    in_component: signIn
+  - id: data:orders.select@load
+    location:
+      file: src/pages/OrderDetail.tsx
+      line: 9
+      end_line: 9
+      symbol: load
+    criticality: high
+    criticality_reasons:
+      - reads data
+      - table 'orders' holds sensitive or financial data
+    kind: data_operation
+    table: orders
+    operation: select
+    columns:
+      - '*'
+    filters:
+      - eq(id)
+      - single
+    in_component: load
+endpoints: []
+server_actions: []
+edge_functions: []
+policies:
+  - id: policy:profiles.Users-read-own-profile
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 33
+    criticality: critical
+    criticality_reasons:
+      - row-level security on 'profiles' for SELECT
+      - guards sensitive data
+    kind: policy
+    name: Users read own profile
+    table: profiles
+    command: SELECT
+    roles:
+      - authenticated
+    permissive: true
+    using: auth.uid() = id
+  - id: policy:profiles.Users-update-own-profile
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 37
+    criticality: critical
+    criticality_reasons:
+      - row-level security on 'profiles' for UPDATE
+      - guards sensitive data
+    kind: policy
+    name: Users update own profile
+    table: profiles
+    command: UPDATE
+    roles:
+      - authenticated
+    permissive: true
+    using: auth.uid() = id
+    with_check: auth.uid() = id
+  - id: policy:orders.Users-manage-own-orders
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 42
+    criticality: critical
+    criticality_reasons:
+      - row-level security on 'orders' for ALL
+      - governs every operation on the table
+      - guards sensitive data
+    kind: policy
+    name: Users manage own orders
+    table: orders
+    command: ALL
+    roles:
+      - authenticated
+    permissive: true
+    using: auth.uid() = user_id
+  - id: policy:payments.Payments-readable-by-order-owner
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 46
+    criticality: critical
+    criticality_reasons:
+      - row-level security on 'payments' for SELECT
+      - guards sensitive data
+    kind: policy
+    name: Payments readable by order owner
+    table: payments
+    command: SELECT
+    roles:
+      - authenticated
+    permissive: true
+    using: exists (select 1 from orders o where o.id = payments.order_id and o.user_id = auth.uid())
+externals:
+  - id: external:stripe
+    location:
+      file: src/pages/Checkout.tsx
+      line: 1
+    criticality: high
+    criticality_reasons:
+      - stripe calls cost money or reach real users
+    kind: external
+    vendor: stripe
+    package: '@stripe/stripe-js'
+    hosts:
+      - api.stripe.com
+    side_effecting: true
+tables:
+  - name: audit_log
+    columns:
+      - name: id
+        type: bigserial
+        nullable: false
+        primary_key: true
+      - name: actor
+        type: uuid
+        nullable: true
+        primary_key: false
+      - name: action
+        type: text
+        nullable: false
+        primary_key: false
+    rls_enabled: false
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 23
+  - name: orders
+    columns:
+      - name: id
+        type: uuid
+        nullable: false
+        default: gen_random_uuid()
+        primary_key: true
+      - name: user_id
+        type: uuid
+        nullable: false
+        primary_key: false
+        references: profiles.id
+      - name: total
+        type: numeric(10,2)
+        nullable: false
+        default: '0'
+        primary_key: false
+      - name: status
+        type: text
+        nullable: false
+        default: '''open'''
+        primary_key: false
+      - name: created_at
+        type: timestamptz
+        nullable: true
+        default: now()
+        primary_key: false
+    rls_enabled: true
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 8
+  - name: payments
+    columns:
+      - name: id
+        type: uuid
+        nullable: false
+        default: gen_random_uuid()
+        primary_key: true
+      - name: order_id
+        type: uuid
+        nullable: false
+        primary_key: false
+        references: orders.id
+      - name: amount
+        type: numeric(10,2)
+        nullable: false
+        primary_key: false
+      - name: kind
+        type: text
+        nullable: false
+        primary_key: false
+    rls_enabled: true
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 16
+  - name: profiles
+    columns:
+      - name: id
+        type: uuid
+        nullable: false
+        primary_key: true
+        references: users.id
+      - name: name
+        type: text
+        nullable: false
+        primary_key: false
+      - name: email
+        type: text
+        nullable: false
+        primary_key: false
+      - name: created_at
+        type: timestamptz
+        nullable: true
+        default: now()
+        primary_key: false
+    rls_enabled: true
+    location:
+      file: supabase/migrations/20240101000000_init.sql
+      line: 1
+warnings: []

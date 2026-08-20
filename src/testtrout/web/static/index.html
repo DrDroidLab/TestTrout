@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TestTrout</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f7f8fa; --panel-2: #eef1f5; --border: #dde3ea;
+    --text: #1d2530; --muted: #66748a; --accent: #2563eb;
+    --critical: #b91c1c; --high: #b45309; --medium: #0e7490; --low: #64748b;
+    --pass: #15803d; --fail: #b91c1c; --warn: #b45309; --incon: #7c3aed;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1319; --panel: #161b23; --panel-2: #1c232d; --border: #2a3441;
+      --text: #e4e9f0; --muted: #8b98ad; --accent: #60a5fa;
+      --critical: #f87171; --high: #fbbf24; --medium: #22d3ee; --low: #94a3b8;
+      --pass: #4ade80; --fail: #f87171; --warn: #fbbf24; --incon: #c084fc;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  a { color: var(--accent); }
+
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -0.2px; }
+  header .path { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+
+  nav { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border); }
+  nav button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); padding: 10px 14px; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); }
+
+  main { padding: 20px; max-width: 1200px; }
+  section { display: none; }
+  section.active { display: block; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+  }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 26px; font-weight: 600; margin-top: 4px; letter-spacing: -0.5px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; background: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th {
+    text-align: left; font-weight: 500; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: var(--panel); }
+
+  .pill {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+    font-weight: 500; white-space: nowrap;
+  }
+  .critical { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
+  .high     { color: var(--high);     background: color-mix(in srgb, var(--high) 14%, transparent); }
+  .medium   { color: var(--medium);   background: color-mix(in srgb, var(--medium) 14%, transparent); }
+  .low      { color: var(--low);      background: color-mix(in srgb, var(--low) 16%, transparent); }
+  .pass, .certified, .passed { color: var(--pass); background: color-mix(in srgb, var(--pass) 14%, transparent); }
+  .fail, .assertion_failure  { color: var(--fail); background: color-mix(in srgb, var(--fail) 14%, transparent); }
+  .warning, .draft, .flake, .contract_mismatch, .quarantined, .timeout {
+    color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .inconclusive, .auth_failure, .environment_failure, .dependency_failure {
+    color: var(--incon); background: color-mix(in srgb, var(--incon) 14%, transparent); }
+  .approved { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .rejected, .skipped { color: var(--muted); background: var(--panel-2); }
+
+  button.action {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 12.5px;
+    font-family: inherit;
+  }
+  button.action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button.action:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover:not(:disabled) { color: #fff; opacity: 0.9; }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
+  .muted { color: var(--muted); }
+  .note {
+    border-left: 2px solid var(--accent); padding: 6px 0 6px 11px;
+    margin: 8px 0; color: var(--muted); font-size: 13px;
+  }
+  .warnbox {
+    border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+    border-radius: var(--radius); padding: 10px 13px; margin: 12px 0; font-size: 13px;
+  }
+  .detail { background: var(--panel); border-radius: 6px; padding: 10px 12px; margin-top: 6px; }
+  .detail ul { margin: 4px 0 0; padding-left: 18px; }
+  .detail li { margin: 2px 0; color: var(--muted); }
+  pre {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; overflow-x: auto; font-size: 12.5px; margin: 8px 0;
+  }
+
+  #log {
+    position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
+    background: var(--panel); border-top: 1px solid var(--border); padding: 10px 20px;
+    display: none;
+  }
+  #log.open { display: block; }
+  #log .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  #log .line { font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 1px 0; }
+  #log .warn { color: var(--warn); }
+  #log .error { color: var(--fail); }
+  #log .info { color: var(--muted); }
+  .spinner {
+    width: 11px; height: 11px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.7s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TestTrout</h1>
+  <span class="path mono" id="root"></span>
+  <span class="spacer"></span>
+  <span id="safety"></span>
+  <span class="muted mono" id="version"></span>
+</header>
+
+<nav>
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="gaps">Gaps</button>
+  <button data-tab="scenarios">Scenarios</button>
+  <button data-tab="surfaces">Surfaces</button>
+  <button data-tab="runs">Runs</button>
+  <button data-tab="agent">Connect an agent</button>
+</nav>
+
+<main>
+  <section id="overview" class="active">
+    <div class="toolbar">
+      <button class="action" data-act="scan">Scan</button>
+      <button class="action" data-act="probe">Probe</button>
+      <button class="action" data-act="propose">Propose</button>
+      <button class="action" data-act="generate">Generate</button>
+      <button class="action primary" data-act="run">Run</button>
+      <button class="action" data-act="certify">Certify</button>
+    </div>
+    <div class="grid" id="cards"></div>
+    <div id="overview-notes"></div>
+    <div id="overview-config"></div>
+  </section>
+
+  <section id="gaps">
+    <div class="toolbar">
+      <span class="muted">Ranked by what to write first. Every rank is the sum of named contributions.</span>
+      <span class="spacer"></span>
+      <button class="action" data-act="propose">Draft top 5</button>
+    </div>
+    <div id="gaps-body"></div>
+  </section>
+
+  <section id="scenarios">
+    <div class="toolbar">
+      <span class="muted">Approve what you want in the suite. Nothing is approved for you.</span>
+      <span class="spacer"></span>
+      <button class="action" data-act="generate">Generate approved</button>
+    </div>
+    <div id="scenarios-body"></div>
+  </section>
+
+  <section id="surfaces"><div id="surfaces-body"></div></section>
+  <section id="runs"><div id="runs-body"></div></section>
+  <section id="agent"><div id="agent-body"></div></section>
+</main>
+
+<div id="log">
+  <div class="head">
+    <span id="log-state"></span>
+    <strong id="log-name" class="mono"></strong>
+    <span class="spacer" style="flex:1"></span>
+    <button class="action" onclick="document.getElementById('log').classList.remove('open')">Hide</button>
+  </div>
+  <div id="log-lines"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pill = (v) => `<span class="pill ${esc(v)}">${esc(String(v).replace(/_/g, ' '))}</span>`;
+
+let state = {};
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------- tabs
+
+document.querySelectorAll('nav button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('nav button').forEach((x) => x.classList.remove('active'));
+    document.querySelectorAll('section').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    $(b.dataset.tab).classList.add('active');
+    render(b.dataset.tab);
+  };
+});
+
+// -------------------------------------------------------------- actions
+
+document.querySelectorAll('[data-act]').forEach((b) => {
+  b.onclick = async () => {
+    const act = b.dataset.act;
+    const body = act === 'propose' ? { limit: 5 } : {};
+    try {
+      await api(`/api/actions/${act}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      openLog(act);
+      followJob();
+    } catch (e) { alert(e.message); }
+  };
+});
+
+function openLog(name) {
+  $('log').classList.add('open');
+  $('log-name').textContent = name;
+  $('log-lines').innerHTML = '';
+  $('log-state').innerHTML = '<span class="spinner"></span>';
+  setBusy(true);
+}
+
+function setBusy(busy) {
+  document.querySelectorAll('[data-act]').forEach((b) => { b.disabled = busy; });
+}
+
+function followJob() {
+  const source = new EventSource('/api/job/stream');
+  source.onmessage = (event) => {
+    const line = JSON.parse(event.data);
+    if (line.level === 'done') {
+      source.close();
+      $('log-state').textContent = line.message === 'failed' ? '✕' : '✓';
+      setBusy(false);
+      loadAll();
+      return;
+    }
+    const div = document.createElement('div');
+    div.className = `line ${line.level}`;
+    div.textContent = line.message;
+    $('log-lines').appendChild(div);
+    $('log').scrollTop = $('log').scrollHeight;
+  };
+  source.onerror = () => { source.close(); setBusy(false); loadAll(); };
+}
+
+// --------------------------------------------------------------- render
+
+function render(tab) {
+  ({ overview: renderOverview, gaps: renderGaps, scenarios: renderScenarios,
+     surfaces: renderSurfaces, runs: renderRuns, agent: renderAgent }[tab] || (() => {}))();
+}
+
+function renderOverview() {
+  const o = state.overview || {};
+  $('root').textContent = o.root || '';
+  $('version').textContent = o.version ? `v${o.version}` : '';
+
+  const writable = (o.entrypoints || []).filter((e) => e.writable);
+  $('safety').innerHTML = (o.entrypoints || []).length === 0
+    ? '<span class="pill low">no deployment configured</span>'
+    : writable.length
+      ? `<span class="pill high">${writable.length} writable deployment(s)</span>`
+      : '<span class="pill pass">all deployments read-only</span>';
+
+  if (!o.scanned) {
+    $('cards').innerHTML = '';
+    $('overview-notes').innerHTML =
+      '<div class="empty">No scan yet. Press <strong>Scan</strong> to analyse this repository.</div>';
+    $('overview-config').innerHTML = '';
+    return;
+  }
+
+  const c = o.coverage || {};
+  const s = o.scenarios || {};
+  const run = o.last_run;
+  $('cards').innerHTML = `
+    <div class="card">
+      <div class="label">Surface coverage</div>
+      <div class="value">${c.percent ?? 0}%</div>
+      <div class="bar"><div style="width:${c.percent ?? 0}%"></div></div>
+      <div class="sub">${c.covered_surfaces ?? 0} of ${c.total_surfaces ?? 0} surfaces</div>
+    </div>
+    <div class="card">
+      <div class="label">Critical coverage</div>
+      <div class="value">${c.critical_percent ?? 0}%</div>
+      <div class="bar"><div style="width:${c.critical_percent ?? 0}%"></div></div>
+      <div class="sub">${c.critical_covered ?? 0} of ${c.critical_total ?? 0} critical surfaces</div>
+    </div>
+    <div class="card">
+      <div class="label">Policies covered</div>
+      <div class="value">${c.policies_covered ?? 0}<span class="muted" style="font-size:16px">/${c.policies_total ?? 0}</span></div>
+      <div class="sub">${o.authorization_possible ? 'authorization tests possible' : 'needs a second test user'}</div>
+    </div>
+    <div class="card">
+      <div class="label">Gaps</div>
+      <div class="value">${o.gap_total ?? 0}</div>
+      <div class="sub">${o.gap_ready ?? 0} ready to draft</div>
+    </div>
+    <div class="card">
+      <div class="label">Scenarios</div>
+      <div class="value">${Object.values(s).reduce((a, b) => a + b, 0)}</div>
+      <div class="sub">${Object.entries(s).map(([k, v]) => `${v} ${k}`).join(' · ') || 'none yet'}</div>
+    </div>
+    <div class="card">
+      <div class="label">Last run</div>
+      <div class="value">${run ? pill(run.status) : '<span class="muted" style="font-size:16px">never</span>'}</div>
+      <div class="sub">${run ? `${run.duration_seconds}s · ${Object.entries(run.counts).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ')}` : ''}</div>
+    </div>`;
+
+  $('overview-notes').innerHTML = (o.notes || []).length
+    ? `<div class="warnbox"><strong>What would make this better</strong>` +
+      (o.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('') + '</div>'
+    : '';
+
+  $('overview-config').innerHTML = `
+    <h3 style="margin:22px 0 0;font-size:13px">Configuration</h3>
+    <table>
+      <tr><td class="muted" style="width:180px">Project</td><td>${esc(o.project?.framework || '?')}${o.project?.backend ? ' + ' + esc(o.project.backend) : ''}</td></tr>
+      <tr><td class="muted">Deployments</td><td>${(o.entrypoints || []).map((e) =>
+        `<div>${esc(e.name)} <span class="mono muted">${esc(e.url)}</span> ${e.writable
+          ? '<span class="pill high">writable</span>'
+          : '<span class="pill pass">read-only</span>'}</div>`).join('') || '<span class="muted">none — run <code>qa init</code></span>'}</td></tr>
+      <tr><td class="muted">Test users</td><td>${(o.test_users || []).join(', ') || '<span class="muted">none</span>'}</td></tr>
+      <tr><td class="muted">Database isolation</td><td>${esc(o.isolation || '')}</td></tr>
+      <tr><td class="muted">Blocked third parties</td><td class="mono">${(o.substitution || []).map((x) => esc(x.match)).join(', ') || '<span class="muted">none detected</span>'}</td></tr>
+      <tr><td class="muted">Model provider</td><td>${esc(o.model?.provider || '')} <span class="muted">${esc(o.model?.model || '')}</span></td></tr>
+      <tr><td class="muted">Probe</td><td>${o.probe ? `${o.probe.reachable}/${o.probe.total} screens reachable · ${o.probe.divergences} divergence(s)` : '<span class="muted">not probed</span>'}</td></tr>
+    </table>`;
+}
+
+function renderGaps() {
+  const gaps = (state.gaps || {}).gaps || [];
+  if (!gaps.length) { $('gaps-body').innerHTML = '<div class="empty">No gaps. Scan first.</div>'; return; }
+  $('gaps-body').innerHTML = `<table>
+    <tr><th>Criticality</th><th>Kind</th><th>What the test would assert</th><th>Score</th></tr>
+    ${gaps.map((g, i) => `
+      <tr class="clickable" onclick="toggle('gap${i}')">
+        <td>${pill(g.criticality)}</td>
+        <td class="muted">${esc(g.kind.replace(/_/g, ' '))}</td>
+        <td>${g.blockers?.length ? '<span class="pill warning">blocked</span> ' : ''}${esc(g.title)}</td>
+        <td class="mono muted">${g.score}</td>
+      </tr>
+      <tr id="gap${i}" style="display:none"><td colspan="4">
+        <div class="detail">
+          <strong>Why it ranks here</strong>
+          <ul>${(g.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+          ${g.blockers?.length ? `<div style="margin-top:8px"><strong>Blocked</strong><ul>${
+            g.blockers.map((b) => `<li>${esc(b.message)}</li>`).join('')}</ul></div>` : ''}
+        </div>
+      </td></tr>`).join('')}
+  </table>`;
+}
+
+function renderScenarios() {
+  const list = (state.scenarios || {}).scenarios || [];
+  if (!list.length) {
+    $('scenarios-body').innerHTML = '<div class="empty">No scenarios yet. Draft some from the Gaps tab.</div>';
+    return;
+  }
+  $('scenarios-body').innerHTML = `<table>
+    <tr><th>Status</th><th>Criticality</th><th>Asserts</th><th></th></tr>
+    ${list.map((s, i) => `
+      <tr class="clickable" onclick="toggle('sc${i}')">
+        <td>${pill(s.status)}</td>
+        <td>${pill(s.criticality)}</td>
+        <td>${esc(s.title)}${s.open_questions?.length
+          ? ` <span class="pill warning">${s.open_questions.length} question(s)</span>` : ''}</td>
+        <td onclick="event.stopPropagation()">
+          ${s.status === 'draft' ? `
+            <button class="action" onclick="setStatus('${esc(s.id)}','approved')">Approve</button>
+            <button class="action" onclick="setStatus('${esc(s.id)}','rejected')">Reject</button>` : ''}
+        </td>
+      </tr>
+      <tr id="sc${i}" style="display:none"><td colspan="4"><div class="detail">
+        ${s.open_questions?.length ? `<strong>Answer these first</strong><ul>${
+          s.open_questions.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>
+          <div class="muted" style="margin-top:6px">Edit <code>.trout/scenarios/${
+            esc(s.id.replace(/:/g, '_'))}.yaml</code> — the tool reads back what you write.</div>` : ''}
+        ${s.given?.length ? `<div style="margin-top:8px"><strong>Given</strong><ul>${
+          s.given.map((g) => `<li>${esc(g)}</li>`).join('')}</ul></div>` : ''}
+        <div style="margin-top:8px"><strong>Then</strong><ul>${
+          (s.then || []).map((a) => `<li>${esc(a.kind)}${a.expected ? ' → ' + esc(a.expected) : ''}
+            <span class="pill ${a.provenance === 'inferred' ? 'warning' : 'pass'}">${esc(a.provenance)}</span>
+            ${a.source ? `<div class="muted">${esc(a.source)}</div>` : ''}</li>`).join('') ||
+            '<li class="muted">no assertions</li>'}</ul></div>
+        ${s.emitted_to ? `<div class="muted mono" style="margin-top:8px">generated: ${esc(s.emitted_to)}</div>` : ''}
+      </div></td></tr>`).join('')}
+  </table>`;
+}
+
+function renderSurfaces() {
+  const d = state.surfaces || {};
+  const list = d.surfaces || [];
+  if (!list.length) { $('surfaces-body').innerHTML = '<div class="empty">No scan yet.</div>'; return; }
+  $('surfaces-body').innerHTML = `
+    ${(d.warnings || []).length ? `<div class="warnbox"><strong>${d.warnings.length} warning(s)</strong>${
+      d.warnings.map((w) => `<div class="note">${esc(w.message)}</div>`).join('')}</div>` : ''}
+    <table>
+      <tr><th>Criticality</th><th>Kind</th><th>Id</th><th>Source</th></tr>
+      ${list.map((s, i) => `
+        <tr class="clickable" onclick="toggle('sf${i}')">
+          <td>${pill(s.criticality)}</td>
+          <td class="muted">${esc(s.kind.replace(/_/g, ' '))}</td>
+          <td class="mono">${esc(s.id)}</td>
+          <td class="mono muted">${esc(s.location?.file || '')}:${s.location?.line || ''}</td>
+        </tr>
+        <tr id="sf${i}" style="display:none"><td colspan="4"><div class="detail">
+          <ul>${(s.criticality_reasons || []).map((r) => `<li>${esc(r)}</li>`).join('') ||
+            '<li class="muted">no reasons recorded</li>'}</ul>
+        </div></td></tr>`).join('')}
+    </table>`;
+}
+
+function renderRuns() {
+  const runs = (state.runs || {}).runs || [];
+  if (!runs.length) { $('runs-body').innerHTML = '<div class="empty">No runs yet. Press <strong>Run</strong>.</div>'; return; }
+  $('runs-body').innerHTML = runs.map((r, i) => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        ${pill(r.status)}
+        <strong class="mono">${esc(r.id)}</strong>
+        <span class="muted">${esc(r.entrypoint)} · ${r.duration_seconds}s · isolation: ${esc(r.isolation)}</span>
+        <span style="flex:1"></span>
+        <button class="action" onclick="toggle('run${i}')">Details</button>
+      </div>
+      ${r.status === 'inconclusive' ? `<div class="warnbox" style="margin:10px 0 0">
+        This run says nothing about the product. Something prevented a reliable decision.</div>` : ''}
+      <div id="run${i}" style="display:none;margin-top:10px">
+        <table>
+          <tr><th>Result</th><th>Scenario</th><th>Detail</th></tr>
+          ${(r.results || []).map((x) => `<tr>
+            <td>${pill(x.classification)}</td>
+            <td class="mono">${esc(x.scenario_id.replace('scenario:', ''))}</td>
+            <td>${esc(x.message || '')}
+              ${x.evidence?.reproduce ? `<div class="muted mono">${esc(x.evidence.reproduce)}</div>` : ''}
+              ${x.evidence?.trace ? `<div class="muted mono">trace: ${esc(x.evidence.trace)}</div>` : ''}
+            </td></tr>`).join('')}
+        </table>
+        ${(r.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function renderAgent() {
+  const root = (state.overview || {}).root || '.';
+  $('agent-body').innerHTML = `
+    <p>This tool is usable as a QA backend for a coding agent. Everything on this
+       page is available as typed MCP tools, plus <code>.trout/</code> state as resources.</p>
+    <h3 style="font-size:13px">Register the MCP server</h3>
+    <pre>pip install 'testtrout[mcp]'
+qa mcp ${esc(root)}</pre>
+    <p class="muted">The server is bound to this one project, so an agent cannot act on the
+       wrong repository.</p>
+    <h3 style="font-size:13px;margin-top:20px">Tools</h3>
+    <pre>scan  surfaces  gaps  intent  probe  propose
+scenarios  approve  generate  run  certify  report  doctor</pre>
+    <h3 style="font-size:13px;margin-top:20px">Resources</h3>
+    <pre>trout://surfaces   trout://intent   trout://config   trout://scenarios</pre>
+    <h3 style="font-size:13px;margin-top:20px">What to tell your agent</h3>
+    <div class="detail">
+      <ul>
+        <li>Read <code>status</code> before <code>results</code>. An
+            <code>inconclusive</code> run says nothing about the product.</li>
+        <li>Only <code>assertion_failure</code> is a product signal. Auth and
+            environment failures are about the harness.</li>
+        <li>Quote a gap's <code>reasons</code> rather than re-deriving a ranking.</li>
+        <li>Never approve scenarios on the user's behalf.</li>
+        <li>Never mark a deployment disposable, or disable the substitution
+            boundary, to make a run go green.</li>
+      </ul>
+    </div>
+    <p class="muted" style="margin-top:18px">The CLI works the same way — every command
+       supports <code>--json</code>.</p>`;
+}
+
+function toggle(id) {
+  const el = $(id);
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function setStatus(id, status) {
+  try {
+    await api(`/api/scenarios/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    await loadAll();
+  } catch (e) { alert(e.message); }
+}
+
+// ----------------------------------------------------------------- load
+
+async function loadAll() {
+  const [overview, gaps, scenarios, surfaces, runs] = await Promise.all([
+    api('/api/overview').catch(() => ({})),
+    api('/api/gaps').catch(() => ({})),
+    api('/api/scenarios').catch(() => ({})),
+    api('/api/surfaces').catch(() => ({})),
+    api('/api/runs').catch(() => ({})),
+  ]);
+  state = { overview, gaps, scenarios, surfaces, runs };
+  render(document.querySelector('nav button.active').dataset.tab);
+}
+
+loadAll();
+</script>
+</body>
+</html>

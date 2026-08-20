@@ -1,0 +1,32 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+.env
+.DS_Store
+
+# Local run state. Scenarios, config, surfaces and intent ARE committed —
+# they are your test suite and reviewing changes to them is the point.
+# Everything below is output, and some of it is sensitive:
+#   .cache/    model cassettes — full prompts and responses, i.e. your source
+#   evidence/  browser traces, screenshots, videos — may contain real data
+#   observed/  network captures from a live deployment
+.trout/observed/
+.trout/runs/
+.trout/evidence/
+.trout/.cache/
+
+# Never commit credentials. .trout/config.yaml holds env: references only.
+.env
+.env.*
+!.env.example
+
+# Fixture apps stay pristine; tests/golden/expected/ is the committed artifact.
+examples/*/.trout/

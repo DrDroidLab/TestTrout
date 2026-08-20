@@ -1,0 +1,32 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --all-extras --dev
+      - name: Install Chromium
+        # The prober tests drive a real browser. They skip without it, so
+        # omitting this step would silently reduce coverage rather than fail.
+        run: uv run playwright install --with-deps chromium
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Tests
+        # No API key is available here. The full suite must pass offline,
+        # against recorded cassettes. See docs/adr/0003-deterministic-core.md
+        run: uv run pytest --cov=qaagent --cov-report=term-missing
