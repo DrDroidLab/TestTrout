@@ -61,20 +61,30 @@ class CompletionResponse:
     output_tokens: int | None = None
 
     def json(self) -> Any:
-        """Parse the response as JSON.
+        """Parse the response as JSON, tolerating the ways models wrap it.
+
+        Even with a JSON schema requested, some endpoints return the object
+        inside a ``` fence, and at least one does so only sometimes — which is
+        worse than always, because it turns into an intermittent failure that
+        looks like a bad prompt.
 
         Raises:
-            ValueError: if the response is not valid JSON. Callers should treat
-                this as a provider failure and surface it rather than retrying
-                silently — a malformed structured response usually means the
-                schema was too complex, and that is worth seeing.
+            ValueError: if nothing parseable is present. Callers should surface
+                this rather than retry silently: a genuinely malformed
+                structured response usually means the schema was too complex,
+                and that is worth seeing.
         """
         import json as _json
 
-        try:
-            return _json.loads(self.text)
-        except _json.JSONDecodeError as exc:
-            raise ValueError(f"provider {self.provider} returned non-JSON output: {exc}") from exc
+        for candidate in _json_candidates(self.text):
+            try:
+                return _json.loads(candidate)
+            except _json.JSONDecodeError:
+                continue
+        raise ValueError(
+            f"provider {self.provider} returned no parseable JSON "
+            f"({len(self.text)} chars, starts {self.text[:60]!r})"
+        )
 
 
 @runtime_checkable
@@ -92,3 +102,31 @@ class Provider(Protocol):
     def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Run one completion. May raise provider-specific exceptions."""
         ...
+
+
+def _json_candidates(text: str) -> list[str]:
+    """Progressively looser readings of a response, strictest first.
+
+    1. The text as given — the common and correct case.
+    2. The contents of a fenced code block, which several providers add even
+       when a JSON schema was requested.
+    3. The outermost balanced ``{...}``, for a model that wrote a sentence
+       before or after the object.
+
+    Ordering matters: a valid response must never be reinterpreted by a looser
+    rule, so each fallback is only reached when the previous one failed to
+    parse.
+    """
+    stripped = text.strip()
+    candidates = [stripped]
+
+    if stripped.startswith("```"):
+        without_fence = stripped.split("\n", 1)[-1] if "\n" in stripped else ""
+        candidates.append(without_fence.removesuffix("```").strip())
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(stripped[start : end + 1])
+
+    return [c for c in candidates if c]

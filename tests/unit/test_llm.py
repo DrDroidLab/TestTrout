@@ -107,3 +107,38 @@ def test_missing_prompt_is_an_explicit_error():
 def test_prompt_with_a_missing_variable_names_it():
     with pytest.raises(GatewayError, match="needs a value"):
         load_prompt("propose_scenarios", project="p")
+
+
+def test_a_fenced_json_response_is_parsed():
+    """Regression: kimi returns ```json fences even with a schema requested.
+
+    Intermittently, which is worse than always — it looked like a bad prompt.
+    """
+    response = CompletionResponse(
+        text='```json\n{"ok": true, "n": 1}\n```', model="m", provider="kimi"
+    )
+    assert response.json() == {"ok": True, "n": 1}
+
+
+def test_a_bare_fence_without_a_language_is_parsed():
+    response = CompletionResponse(text='```\n{"ok": true}\n```', model="m", provider="kimi")
+    assert response.json() == {"ok": True}
+
+
+def test_prose_around_the_object_is_tolerated():
+    response = CompletionResponse(
+        text='Here you go:\n{"ok": true}\nHope that helps.', model="m", provider="p"
+    )
+    assert response.json() == {"ok": True}
+
+
+def test_plain_json_is_still_parsed_strictly_first():
+    """A valid response must never be reinterpreted by a looser rule."""
+    response = CompletionResponse(text='{"a": {"b": 1}}', model="m", provider="p")
+    assert response.json() == {"a": {"b": 1}}
+
+
+def test_genuinely_unparseable_output_still_raises_with_context():
+    response = CompletionResponse(text="I cannot do that.", model="m", provider="p")
+    with pytest.raises(ValueError, match="no parseable JSON"):
+        response.json()
