@@ -90,7 +90,7 @@ def run(
         generated = [s for s in generated if s.id == scenario_id]
     if not generated:
         record.notes.append(
-            "No generated tests to run. Approve scenarios with `qa approve`, then `qa generate`."
+            "No generated tests to run. Approve scenarios with `trout approve`, then `trout generate`."
         )
         record.finished_at = datetime.now(UTC).isoformat()
         return record
@@ -219,7 +219,7 @@ def _attach_metadata(
             result.scenario_id = scenario.id
             result.title = result.title or scenario.title
         result.evidence.reproduce = (
-            f"qa run --scenario {result.scenario_id} --env {entrypoint.name}"
+            f"trout run --scenario {result.scenario_id} --env {entrypoint.name}"
         )
     return results
 

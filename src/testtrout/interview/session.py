@@ -3,7 +3,7 @@
 Every prompt has a default and every answer is written straight to
 ``.trout/config.yaml``, so quitting halfway loses nothing. The same questions are
 skipped entirely when the corresponding value arrived as a command-line flag,
-which is what lets ``qa init`` serve both a person at a terminal and an agent
+which is what lets ``trout init`` serve both a person at a terminal and an agent
 in a script from one implementation.
 """
 

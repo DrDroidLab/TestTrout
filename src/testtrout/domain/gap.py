@@ -116,7 +116,7 @@ class Coverage(BaseModel):
 
 
 class GapMap(BaseModel):
-    """The complete output of ``qa gaps``."""
+    """The complete output of ``trout gaps``."""
 
     model_config = ConfigDict(extra="forbid")
 

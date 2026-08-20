@@ -20,7 +20,7 @@ def load(root: Path, filename: str = ".env") -> list[str]:
     """Load ``root/.env`` into ``os.environ`` without overwriting existing values.
 
     Returns:
-        The names of the variables that were set, so ``qa doctor`` can show
+        The names of the variables that were set, so ``trout doctor`` can show
         where a value came from. Never returns values.
     """
     path = root / filename

@@ -79,7 +79,7 @@ class Entrypoint(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(description="Referenced by 'qa run --env <name>'.")
+    name: str = Field(description="Referenced by 'trout run --env <name>'.")
     kind: EntrypointKind = EntrypointKind.WEB
     url: str
     disposable: bool = Field(
@@ -159,7 +159,7 @@ class TestUser(BaseModel):
 class ExternalRule(BaseModel):
     """A third-party host to intercept during test runs.
 
-    Populated by ``qa scan`` from the SDKs it finds, so a test run cannot reach
+    Populated by ``trout scan`` from the SDKs it finds, so a test run cannot reach
     a real payment processor without someone having explicitly removed the
     entry.
     """
@@ -189,7 +189,7 @@ class SubstitutionConfig(BaseModel):
     )
     external: list[ExternalRule] = Field(
         default_factory=list,
-        description="Third-party hosts to intercept. Populated by `qa scan`.",
+        description="Third-party hosts to intercept. Populated by `trout scan`.",
     )
 
 
@@ -251,7 +251,7 @@ class RunConfig(BaseModel):
 
 
 class ProjectConfig(BaseModel):
-    """What kind of application this is. Populated by ``qa scan``."""
+    """What kind of application this is. Populated by ``trout scan``."""
 
     model_config = ConfigDict(extra="forbid")
 

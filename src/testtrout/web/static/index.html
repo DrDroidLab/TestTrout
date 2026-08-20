@@ -359,7 +359,7 @@ function renderOverview() {
       <tr><td class="muted">Deployments</td><td>${(o.entrypoints || []).map((e) =>
         `<div>${esc(e.name)} <span class="mono muted">${esc(e.url)}</span> ${e.writable
           ? '<span class="pill high">writable</span>'
-          : '<span class="pill pass">read-only</span>'}</div>`).join('') || '<span class="muted">none — run <code>qa init</code></span>'}</td></tr>
+          : '<span class="pill pass">read-only</span>'}</div>`).join('') || '<span class="muted">none — run <code>trout init</code></span>'}</td></tr>
       <tr><td class="muted">Test users</td><td>${(o.test_users || []).join(', ') || '<span class="muted">none</span>'}</td></tr>
       <tr><td class="muted">Database isolation</td><td>${esc(o.isolation || '')}</td></tr>
       <tr><td class="muted">Blocked third parties</td><td class="mono">${(o.substitution || []).map((x) => esc(x.match)).join(', ') || '<span class="muted">none detected</span>'}</td></tr>
@@ -488,7 +488,7 @@ function renderAgent() {
        page is available as typed MCP tools, plus <code>.trout/</code> state as resources.</p>
     <h3 style="font-size:13px">Register the MCP server</h3>
     <pre>pip install 'testtrout[mcp]'
-qa mcp ${esc(root)}</pre>
+trout mcp ${esc(root)}</pre>
     <p class="muted">The server is bound to this one project, so an agent cannot act on the
        wrong repository.</p>
     <h3 style="font-size:13px;margin-top:20px">Tools</h3>

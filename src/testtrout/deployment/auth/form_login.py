@@ -43,7 +43,7 @@ class FormLoginAdapter:
         """Find a login form, fill it, and confirm we ended up somewhere else."""
         entrypoint = config.entrypoints[0] if config.entrypoints else None
         if entrypoint is None:
-            return AuthOutcome(False, self.id, "no entrypoint configured — run `qa init`")
+            return AuthOutcome(False, self.id, "no entrypoint configured — run `trout init`")
 
         try:
             email = resolve_secret(user.email) or ""

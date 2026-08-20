@@ -250,7 +250,7 @@ def build_server(root: Path) -> MCPServer:
         config = _config()
         target = config.entrypoint(entrypoint)
         if target is None:
-            return {"error": "no entrypoint configured", "fix": "run `qa init`"}
+            return {"error": "no entrypoint configured", "fix": "run `trout init`"}
 
         try:
             observed = run_probe(result, config, target, role=role)
@@ -470,7 +470,7 @@ def build_server(root: Path) -> MCPServer:
         config = _config()
         target = config.entrypoint(entrypoint)
         if target is None:
-            return {"error": "no entrypoint configured", "fix": "run `qa init`"}
+            return {"error": "no entrypoint configured", "fix": "run `trout init`"}
 
         index, _ = load_all(paths.scenarios)
         paths.ensure()
@@ -518,7 +518,7 @@ def build_server(root: Path) -> MCPServer:
         config = _config()
         target = config.entrypoint(entrypoint)
         if target is None:
-            return {"error": "no entrypoint configured", "fix": "run `qa init`"}
+            return {"error": "no entrypoint configured", "fix": "run `trout init`"}
 
         index, _ = load_all(paths.scenarios)
         paths.ensure()

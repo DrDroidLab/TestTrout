@@ -200,7 +200,7 @@ def _authenticate(context: Any, page: Page, config: Config, role: str) -> AuthOu
         return AuthOutcome(
             False,
             "none",
-            f"no test user with role {role!r} in .trout/config.yaml — run `qa init`",
+            f"no test user with role {role!r} in .trout/config.yaml — run `trout init`",
         )
     adapter = select_adapter(config)
     if adapter is None:

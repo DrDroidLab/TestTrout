@@ -90,6 +90,12 @@ def scan(
         render.error_console.print(f"[red]No such directory:[/red] {paths.root}")
         raise typer.Exit(2)
 
+    # Announce the resolved root *before* doing any work. Root discovery walks
+    # upward, so it can land somewhere surprising, and a scan of the wrong tree
+    # is minutes of CPU before anything is printed.
+    if not as_json:
+        render.error_console.print(f"[dim]scanning {paths.root}[/dim]")
+
     result = run_scan(paths.root, max_depth=depth)
 
     if save:
@@ -107,7 +113,7 @@ def scan(
         render.console.print()
         render.console.print(f"[dim]written to {paths.surfaces.relative_to(paths.root)}[/dim]")
         render.console.print(
-            "[dim]next: `qa surfaces` to review, `qa init` to connect a deployment[/dim]"
+            "[dim]next: `trout surfaces` to review, `trout init` to connect a deployment[/dim]"
         )
 
 
@@ -132,7 +138,7 @@ def surfaces(
     """List what the last scan found, ordered by criticality."""
     paths = _resolve(path)
     if not paths.surfaces.is_file():
-        render.error_console.print("[red]No scan found.[/red] Run `qa scan` first.")
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
         raise typer.Exit(2)
 
     result = read_model(paths.surfaces, ScanResult)
@@ -178,8 +184,8 @@ def doctor(path: PathArg = None, as_json: JsonOpt = False) -> None:
     check(
         "package.json", (paths.root / "package.json").is_file(), "required to detect the framework"
     )
-    check(".qa initialised", paths.initialised, "run `qa scan` then `qa init`")
-    check("scan present", paths.surfaces.is_file(), "run `qa scan`")
+    check(".trout initialised", paths.initialised, "run `trout scan` then `trout init`")
+    check("scan present", paths.surfaces.is_file(), "run `trout scan`")
 
     try:
         import tree_sitter_typescript  # noqa: F401
@@ -193,14 +199,16 @@ def doctor(path: PathArg = None, as_json: JsonOpt = False) -> None:
 
         check("browser automation", True, "playwright available")
     except ImportError:
-        check("browser automation", False, "needed for `qa probe`: pip install 'testtrout[probe]'")
+        check(
+            "browser automation", False, "needed for `trout probe`: pip install 'testtrout[probe]'"
+        )
 
     if paths.config.is_file():
         config = read_model(paths.config, Config)
         check(
             "entrypoints",
             bool(config.entrypoints),
-            f"{len(config.entrypoints)} configured" if config.entrypoints else "run `qa init`",
+            f"{len(config.entrypoints)} configured" if config.entrypoints else "run `trout init`",
         )
         check(
             "test users",
@@ -256,7 +264,7 @@ def providers(
     """Show the configured model provider, and optionally verify it works.
 
     Only scenario proposal, intent capture, and failure explanation need a
-    model. `qa scan` never does, so an unconfigured provider is not an error.
+    model. `trout scan` never does, so an unconfigured provider is not an error.
     """
     from testtrout.llm.gateway import Gateway, GatewayError
 
@@ -355,7 +363,7 @@ def init(
 
     if not paths.surfaces.is_file():
         render.console.print(
-            "[yellow]No scan found.[/yellow] Run `qa scan` first so init knows what "
+            "[yellow]No scan found.[/yellow] Run `trout scan` first so init knows what "
             "this project is.\n"
         )
 
@@ -368,7 +376,7 @@ def init(
         if supabase_url:
             config.supabase.url = supabase_url
         if yes:
-            # A scripted run still needs the key reference, or the first `qa run`
+            # A scripted run still needs the key reference, or the first `trout run`
             # refuses with "not set in .trout/config.yaml" while the value sits in
             # .env being ignored.
             config.supabase.anon_key = config.supabase.anon_key or "env:SUPABASE_ANON_KEY"
@@ -408,7 +416,7 @@ def init(
         render.console.print(
             f"[dim]{entrypoint.name} is read-only; mutating requests will be blocked.[/dim]"
         )
-    render.console.print("[dim]next: `qa doctor` to verify, then `qa probe`[/dim]")
+    render.console.print("[dim]next: `trout doctor` to verify, then `trout probe`[/dim]")
 
 
 @app.command()
@@ -439,10 +447,10 @@ def probe(
 
     paths = _resolve(path)
     if not paths.surfaces.is_file():
-        render.error_console.print("[red]No scan found.[/red] Run `qa scan` first.")
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
         raise typer.Exit(2)
     if not paths.config.is_file():
-        render.error_console.print("[red]Not configured.[/red] Run `qa init` first.")
+        render.error_console.print("[red]Not configured.[/red] Run `trout init` first.")
         raise typer.Exit(2)
 
     scan_result = read_model(paths.surfaces, ScanResult)
@@ -521,7 +529,7 @@ def intent(
 
     paths = _resolve(path)
     if not paths.surfaces.is_file():
-        render.error_console.print("[red]No scan found.[/red] Run `qa scan` first.")
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
         raise typer.Exit(2)
 
     scan_result = read_model(paths.surfaces, ScanResult)
@@ -570,7 +578,7 @@ def intent(
     render.console.print(
         "[dim]edit that file directly if it is easier — the tool reads it back[/dim]"
     )
-    render.console.print("[dim]next: `qa gaps`[/dim]")
+    render.console.print("[dim]next: `trout gaps`[/dim]")
 
 
 @app.command()
@@ -598,15 +606,15 @@ def gaps(
     contributions, so a ranking you disagree with can be argued with rather
     than merely overridden.
 
-    Uses whatever evidence exists — the scan alone works, and `qa intent` plus
-    `qa probe` make the ranking considerably better.
+    Uses whatever evidence exists — the scan alone works, and `trout intent` plus
+    `trout probe` make the ranking considerably better.
     """
     from testtrout.planning import gaps as planner
     from testtrout.planning.existing_tests import detect
 
     paths = _resolve(path)
     if not paths.surfaces.is_file():
-        render.error_console.print("[red]No scan found.[/red] Run `qa scan` first.")
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
         raise typer.Exit(2)
 
     scan_result = read_model(paths.surfaces, ScanResult)
@@ -684,7 +692,7 @@ def propose(
 
     paths = _resolve(path)
     if not paths.surfaces.is_file():
-        render.error_console.print("[red]No scan found.[/red] Run `qa scan` first.")
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
         raise typer.Exit(2)
 
     config = read_model(paths.config, Config) if paths.config.is_file() else Config()
@@ -737,7 +745,7 @@ def propose(
         render.console.print(f"  [yellow]·[/yellow] {warning}")
     render.console.print()
     render.console.print(
-        "[dim]review the .yaml files, then `qa approve <id>` or `qa approve --all`[/dim]"
+        "[dim]review the .yaml files, then `trout approve <id>` or `trout approve --all`[/dim]"
     )
 
 
@@ -824,7 +832,7 @@ def approve(
     verb = "rejected" if reject else "approved"
     render.console.print(f"[green]{changed} scenario(s) {verb}[/green]")
     if changed and not reject:
-        render.console.print("[dim]next: `qa generate`[/dim]")
+        render.console.print("[dim]next: `trout generate`[/dim]")
 
 
 @app.command()
@@ -851,7 +859,7 @@ def generate(
     approved = index.by_status(ScenarioStatus.APPROVED)
     if not approved:
         render.error_console.print(
-            "[yellow]No approved scenarios.[/yellow] Run `qa propose` then `qa approve`."
+            "[yellow]No approved scenarios.[/yellow] Run `trout propose` then `trout approve`."
         )
         raise typer.Exit(1)
 
@@ -897,7 +905,7 @@ def mcp(path: PathArg = None) -> None:
     state as resources. For agent hosts without a shell, or where typed tool
     schemas beat remembering flags.
 
-    Register it with a client as: `qa mcp /path/to/project`
+    Register it with a client as: `trout mcp /path/to/project`
     """
     paths = _resolve(path)
     try:
@@ -915,7 +923,7 @@ def _runnable(paths: QaPaths, env: str | None):  # type: ignore[no-untyped-def]
     from testtrout.authoring.store import load_all
 
     if not paths.config.is_file():
-        render.error_console.print("[red]Not configured.[/red] Run `qa init` first.")
+        render.error_console.print("[red]Not configured.[/red] Run `trout init` first.")
         raise typer.Exit(2)
     config = read_model(paths.config, Config)
     entrypoint = config.entrypoint(env)
@@ -1101,7 +1109,7 @@ def report(path: PathArg = None, as_json: JsonOpt = False) -> None:
     paths = _resolve(path)
     records = sorted(paths.runs.glob("*.yaml")) if paths.runs.is_dir() else []
     if not records:
-        render.error_console.print("[yellow]No runs yet.[/yellow] Run `qa run`.")
+        render.error_console.print("[yellow]No runs yet.[/yellow] Run `trout run`.")
         raise typer.Exit(1)
 
     record = read_model(records[-1], RunRecord)

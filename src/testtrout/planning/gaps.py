@@ -217,7 +217,7 @@ def _policy_gaps(scan: ScanResult, context: _Context) -> list[Gap]:
                     code="needs_two_roles",
                     message=(
                         "Two test-user roles are required: proving one user cannot see "
-                        "another's data needs a second user. Add one with `qa init`."
+                        "another's data needs a second user. Add one with `trout init`."
                     ),
                 )
             )
@@ -470,17 +470,17 @@ def _notes(context: _Context, closed: int = 0) -> list[str]:
     if closed:
         notes.append(
             f"{closed} gap(s) are already covered by an accepted scenario and are not "
-            "listed. See `qa scenarios`."
+            "listed. See `trout scenarios`."
         )
     if context.intent is None:
         notes.append(
-            "No product intent captured. Ranking uses code signals only — run `qa intent` "
+            "No product intent captured. Ranking uses code signals only — run `trout intent` "
             "so the things you actually care about outrank the things that merely look risky."
         )
     if context.probe is None:
         notes.append(
             "No probe data. Nothing here is confirmed against a running deployment, so some "
-            "of these surfaces may not be reachable at all. Run `qa probe`."
+            "of these surfaces may not be reachable at all. Run `trout probe`."
         )
     if len(context.roles) < 2:
         notes.append(

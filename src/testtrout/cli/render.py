@@ -305,7 +305,7 @@ def scenario_table(index: ScenarioIndex, limit: int | None = None) -> None:
     scenarios = index.scenarios[:limit] if limit else index.scenarios
     if not scenarios:
         console.print()
-        console.print("[dim]no scenarios yet — run `qa propose`[/dim]")
+        console.print("[dim]no scenarios yet — run `trout propose`[/dim]")
         return
 
     styles = {

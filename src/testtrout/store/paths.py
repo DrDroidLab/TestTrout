@@ -21,21 +21,51 @@ class QaPaths:
     root: Path
 
     @classmethod
+    def search_path(cls, start: Path) -> list[Path]:
+        """Directories to consider, from ``start`` up to a hard boundary.
+
+        The walk **stops at the first repository root** — a directory holding
+        ``.git`` — and never looks above it. Without that boundary, a project
+        with no top-level ``package.json`` walks straight out of itself: one
+        real run resolved the root to a folder containing 184 unrelated
+        repositories, found a stray ``package.json`` there, and spent minutes
+        parsing every checkout on the machine.
+
+        The home directory and the filesystem root are also boundaries, so a
+        directory outside any repository still cannot escape upward.
+        """
+        boundaries = {Path.home().resolve(), Path(start.anchor)}
+        walk: list[Path] = []
+        for candidate in (start, *start.parents):
+            walk.append(candidate)
+            if (candidate / ".git").exists() or candidate in boundaries:
+                break
+        return walk
+
+    @classmethod
     def find(cls, start: Path | None = None) -> QaPaths:
         """Locate the project root by walking up from ``start``.
 
-        Prefers a directory that already contains ``.trout/``; otherwise falls
-        back to the nearest ``package.json``, which is where a first run should
-        create it.
+        Prefers a directory that already contains ``.trout/``, then the nearest
+        ``package.json``, then the repository root. The search never crosses a
+        repository boundary in any of those steps — a stray ``.trout/`` in a
+        parent directory must not silently shadow the real project either.
         """
         current = (start or Path.cwd()).resolve()
-        for candidate in (current, *current.parents):
+        candidates = cls.search_path(current)
+
+        for candidate in candidates:
             if (candidate / ".trout").is_dir():
                 return cls(root=candidate)
-        for candidate in (current, *current.parents):
+        for candidate in candidates:
             if (candidate / "package.json").is_file():
                 return cls(root=candidate)
-        return cls(root=current)
+
+        # No project marker anywhere inside the repository. The repository root
+        # is a better guess than the current directory, and either way the
+        # answer stays inside the boundary.
+        repository_root = next((c for c in candidates if (c / ".git").exists()), None)
+        return cls(root=repository_root or current)
 
     @property
     def dir(self) -> Path:

@@ -23,7 +23,7 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 _HEADER = (
     "# Managed by testtrout. Safe to edit by hand — the tool reads what you write.\n"
-    "# Regenerate with `qa scan`.\n"
+    "# Regenerate with `trout scan`.\n"
 )
 
 

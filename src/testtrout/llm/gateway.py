@@ -99,7 +99,7 @@ class Gateway:
         """The configured provider, constructed lazily.
 
         Lazy construction means a missing API key is only an error when a model
-        is actually needed — ``qa scan`` never trips over it.
+        is actually needed — ``trout scan`` never trips over it.
         """
         if self._provider is None:
             self._provider = _build_provider(self.config)

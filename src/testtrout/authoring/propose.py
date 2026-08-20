@@ -220,7 +220,7 @@ def _browser(gap: Gap, scan: ScanResult, probe: ProbeResult | None, roles: list[
             kind=AssertionKind.VISIBLE,
             target=Target(selector=anchor, description=anchor.description),
             provenance=Provenance.OBSERVED,
-            source=f"observed on {path} during `qa probe`",
+            source=f"observed on {path} during `trout probe`",
             description=f"{anchor.description or anchor.value} is present",
         )
         for anchor in anchors
@@ -229,7 +229,7 @@ def _browser(gap: Gap, scan: ScanResult, probe: ProbeResult | None, roles: list[
     questions: list[str] = []
     if observed is None:
         questions.append(
-            f"{path} has not been probed, so no selectors are known. Run `qa probe` first — "
+            f"{path} has not been probed, so no selectors are known. Run `trout probe` first — "
             "otherwise this test can only assert that the page loads."
         )
     elif not anchors:

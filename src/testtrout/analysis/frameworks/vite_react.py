@@ -55,7 +55,7 @@ class ViteReactAdapter:
                     code="no_routes_found",
                     message=(
                         "No React Router routes were found. If this app routes some other way, "
-                        "screens will be missing from the surface map — run 'qa probe' to "
+                        "screens will be missing from the surface map — run 'trout probe' to "
                         "discover them from the running deployment instead."
                     ),
                 )
