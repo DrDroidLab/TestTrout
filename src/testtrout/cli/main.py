@@ -1,4 +1,4 @@
-"""``qa`` command-line entry point.
+"""``trout`` command-line entry point.
 
 Command design rules:
 
@@ -12,6 +12,7 @@ Command design rules:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -1130,42 +1131,227 @@ def web(
         bool, typer.Option("--open/--no-open", help="Open a browser window.")
     ] = True,
 ) -> None:
-    """Start the local web interface.
+    """Start the web interface for one repository.
 
-    Serves the same `.trout/` state the CLI and MCP server use, so there is never a
-    question of which view is authoritative.
-
-    Binds to loopback by default. This reads your credentials and can trigger
-    runs against your deployment; it is not something to expose on a network.
+    A convenience wrapper around `trout up`: links the resolved repository if it
+    is not already linked, then starts storage, the worker, and the interface.
+    Use `trout up` directly to work across several repositories.
     """
     paths = _resolve(path)
+    up(port=port, host=host, open_browser=open_browser, link=paths.root)
+
+
+@app.command()
+def up(
+    port: Annotated[int, typer.Option("--port", "-p")] = 7411,
+    host: Annotated[
+        str, typer.Option("--host", help="Bind address. Loopback by default.")
+    ] = "127.0.0.1",
+    open_browser: Annotated[bool, typer.Option("--open/--no-open")] = True,
+    link: Annotated[
+        Path | None, typer.Option("--link", help="Link this directory on the way up.")
+    ] = None,
+) -> None:
+    """Start TestTrout: storage, worker, and web interface.
+
+    Everything runs on this machine. Storage is SQLite under ~/.testtrout, the
+    worker runs in-process, and the interface binds to loopback — there is no
+    daemon to install and no container to pull.
+
+    Link repositories from the interface, or with `trout link`.
+    """
+    from testtrout.app import Database, RepoRegistry
+    from testtrout.app.worker import Worker
+
     try:
         import uvicorn
 
         from testtrout.web.app import create_app
     except ImportError as exc:
         render.error_console.print(
-            "[red]The web extra is not installed.[/red] Run: pip install 'testtrout[web]'"
+            "[red]The web server could not be imported.[/red] "
+            "Reinstall with: pip install --force-reinstall testtrout"
         )
         raise typer.Exit(2) from exc
 
+    database = Database()
+    registry = RepoRegistry(database)
+
+    if link is not None:
+        record = registry.link_local(link)
+        render.console.print(f"[green]linked[/green] {record.name} [dim]{record.path}[/dim]")
+
+    worker = Worker(database)
+    worker.start()
+
     url = f"http://{host}:{port}"
-    render.console.print(f"[bold]TestTrout[/bold] [dim]{paths.root}[/dim]")
-    render.console.print(f"  {url}")
+    render.console.print()
+    render.console.print("[bold]TestTrout[/bold]")
+    render.console.print(f"  interface  {url}")
+    render.console.print(f"  storage    {database.path}")
+    render.console.print("  worker     running [dim](in-process)[/dim]")
+    linked = registry.all()
+    render.console.print(
+        f"  repos      {len(linked)} linked"
+        + (
+            f" [dim]({', '.join(r.name for r in linked[:4])})[/dim]"
+            if linked
+            else " [dim]— link one from the interface[/dim]"
+        )
+    )
     if host not in {"127.0.0.1", "localhost"}:
         render.console.print(
-            "[yellow]  warning:[/yellow] bound to a non-loopback address. This interface "
-            "can trigger runs against your deployment."
+            "[yellow]  warning:[/yellow] bound to a non-loopback address. This interface can "
+            "trigger runs against your deployments."
         )
     render.console.print("[dim]  ctrl-c to stop[/dim]")
+    render.console.print()
 
     if open_browser:
         import threading
         import webbrowser
 
-        threading.Timer(0.7, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    uvicorn.run(create_app(paths.root), host=host, port=port, log_level="warning")
+    try:
+        uvicorn.run(create_app(database=database), host=host, port=port, log_level="warning")
+    finally:
+        worker.stop()
+
+
+@app.command()
+def link(
+    target: Annotated[
+        str | None,
+        typer.Argument(help="A local path, or an owner/name GitHub slug."),
+    ] = None,
+    name: Annotated[str | None, typer.Option("--name")] = None,
+    github: Annotated[
+        bool, typer.Option("--github", help="Treat the argument as a GitHub repository to clone.")
+    ] = False,
+) -> None:
+    """Link a repository so the app can work on it.
+
+    A local directory is linked in place and never modified. A GitHub
+    repository is cloned into ~/.testtrout/repos first.
+    """
+    from testtrout.app import Database, RepoRegistry
+    from testtrout.app.repos import RepoError
+
+    registry = RepoRegistry(Database())
+    try:
+        if github:
+            from testtrout.app import github as gh
+
+            if target is None:
+                render.error_console.print(
+                    "[red]Give an owner/name, e.g. DrDroidLab/TestTrout[/red]"
+                )
+                raise typer.Exit(2)
+            token = gh.read_token()
+            if not token:
+                render.error_console.print(
+                    "[red]No GitHub token found.[/red] Set GITHUB_TOKEN, run `gh auth login`, "
+                    "or store one with `trout github-login`."
+                )
+                raise typer.Exit(2)
+            render.console.print(f"[dim]cloning {target}…[/dim]")
+            record = registry.link_github(target, token)
+        else:
+            record = registry.link_local(Path(target or "."), name=name)
+    except (RepoError, Exception) as exc:  # surfaced with a usable message
+        render.error_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    render.console.print(f"[green]linked[/green] {record.name}")
+    render.console.print(f"  [dim]{record.path}[/dim]")
+    render.console.print("[dim]next: `trout up` to open the interface, or `trout scan`[/dim]")
+
+
+@app.command(name="github-login")
+def github_login(
+    token: Annotated[
+        str | None, typer.Option("--token", help="Paste a token. Prompted for if omitted.")
+    ] = None,
+    forget: Annotated[bool, typer.Option("--forget", help="Remove a stored token.")] = False,
+) -> None:
+    """Store a GitHub personal access token for cloning private repositories.
+
+    Checked first: GITHUB_TOKEN, then the `gh` CLI. If either is present you do
+    not need this — TestTrout would rather not hold a credential at all.
+
+    A stored token is written to ~/.testtrout/github with owner-only
+    permissions, never into the database.
+    """
+    from testtrout.app import github as gh
+
+    if forget:
+        removed = gh.forget_token()
+        render.console.print(
+            "[green]token removed[/green]" if removed else "[dim]no stored token[/dim]"
+        )
+        return
+
+    for name, value in (("GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN")),):
+        if value:
+            render.console.print(f"[dim]{name} is already set — nothing to store.[/dim]")
+            return
+
+    supplied = token or typer.prompt("GitHub token", hide_input=True)
+    try:
+        account = gh.whoami(supplied)
+    except gh.GitHubError as exc:
+        render.error_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    path = gh.store_token(supplied)
+    render.console.print(f"[green]stored[/green] token for [bold]{account}[/bold]")
+    render.console.print(f"  [dim]{path} (owner-only)[/dim]")
+
+
+@app.command()
+def repos(as_json: JsonOpt = False) -> None:
+    """List linked repositories."""
+    from testtrout.app import Database, RepoRegistry
+
+    registry = RepoRegistry(Database())
+    linked = registry.all()
+
+    if as_json:
+        typer.echo(
+            json.dumps([r.model_dump(mode="json") | {"exists": r.exists} for r in linked], indent=2)
+        )
+        return
+
+    if not linked:
+        render.console.print("[dim]no repositories linked — `trout link <path>`[/dim]")
+        return
+    render.repo_table(linked)
+
+
+@app.command()
+def worker() -> None:
+    """Run a standalone worker.
+
+    `trout up` already runs one in-process. This is for keeping work going with
+    the interface closed, or for a second worker on a busy machine.
+    """
+    from testtrout.app import Database
+    from testtrout.app.worker import Worker
+
+    database = Database()
+    instance = Worker(database)
+    reaped = instance.queue.reap_stale()
+    if reaped:
+        render.console.print(
+            f"[yellow]failed {reaped} job(s) left running by a previous worker[/yellow]"
+        )
+    render.console.print(f"[bold]worker[/bold] [dim]{database.path}[/dim]")
+    render.console.print("[dim]ctrl-c to stop[/dim]")
+    try:
+        instance.loop()
+    except KeyboardInterrupt:
+        render.console.print("stopped")
 
 
 def main() -> None:

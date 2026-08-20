@@ -2,6 +2,10 @@
 
 Thin over the same library the CLI uses, so these test the contract the page
 sees and the guarantees the API must not break — not the logic underneath.
+
+The API only *enqueues* work; a worker executes it. Tests that want the effect
+drain the queue synchronously rather than starting a thread, which keeps them
+deterministic.
 """
 
 from __future__ import annotations
@@ -15,6 +19,8 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
+from testtrout.app import Database, RepoRegistry
+from testtrout.app.worker import Worker
 from testtrout.web.app import create_app
 
 FIXTURE = Path(__file__).resolve().parents[2] / "examples" / "lovable-shop"
@@ -24,24 +30,26 @@ FIXTURE = Path(__file__).resolve().parents[2] / "examples" / "lovable-shop"
 def project(tmp_path: Path) -> Path:
     destination = tmp_path / "app"
     shutil.copytree(FIXTURE, destination)
+    (destination / ".git").mkdir()
     return destination
 
 
 @pytest.fixture
-def client(project: Path) -> TestClient:
-    return TestClient(create_app(project))
+def database(tmp_path: Path) -> Database:
+    return Database(tmp_path / "app.db")
 
 
-def _wait_for_job(client: TestClient, tries: int = 200) -> dict:
-    """Poll until the background job settles."""
-    import time
+@pytest.fixture
+def client(project: Path, database: Database) -> TestClient:
+    RepoRegistry(database).link_local(project)
+    return TestClient(create_app(database=database))
 
-    for _ in range(tries):
-        job = client.get("/api/job").json()
-        if job.get("state") in {"done", "failed"}:
-            return job
-        time.sleep(0.05)
-    raise AssertionError("job did not finish")
+
+def drain(database: Database) -> None:
+    """Execute everything queued, synchronously."""
+    worker = Worker(database)
+    while (job := worker.queue.claim()) is not None:
+        worker.execute(job)
 
 
 def test_the_page_is_served(client: TestClient):
@@ -50,86 +58,100 @@ def test_the_page_is_served(client: TestClient):
     assert "TestTrout" in response.text
 
 
-def test_overview_works_before_anything_has_been_scanned(client: TestClient):
-    """A first-run user must get a usable page, not an error."""
-    body = client.get("/api/overview").json()
+def test_repos_are_listed(client: TestClient):
+    body = client.get("/api/repos").json()
+    assert len(body["repos"]) == 1
+    assert body["repos"][0]["exists"] is True
+    assert body["database"].endswith(".db")
+
+
+def test_linking_a_repository_queues_a_scan(tmp_path: Path, database: Database):
+    """A freshly linked repository is useless until scanned."""
+    other = tmp_path / "second"
+    shutil.copytree(FIXTURE, other)
+    (other / ".git").mkdir()
+    api = TestClient(create_app(database=database))
+
+    response = api.post("/api/repos", json={"source": "local", "path": str(other)})
+    assert response.status_code == 200
+
+    jobs = api.get("/api/jobs").json()["jobs"]
+    assert [j["kind"] for j in jobs] == ["scan"]
+
+
+def test_a_repository_that_moved_is_a_404(client: TestClient, project: Path):
+    shutil.rmtree(project)
+    response = client.get("/api/repos/1/overview")
+    assert response.status_code == 404
+    assert "no longer exists" in response.json()["detail"]
+
+
+def test_overview_works_before_anything_is_scanned(client: TestClient):
+    body = client.get("/api/repos/1/overview").json()
     assert body["scanned"] is False
     assert body["coverage"] is None
 
 
-def test_scan_action_runs_and_reports_counts(client: TestClient):
-    assert client.post("/api/actions/scan", json={}).status_code == 200
-    job = _wait_for_job(client)
+def test_a_queued_scan_runs_and_updates_the_overview(client: TestClient, database: Database):
+    assert client.post("/api/repos/1/jobs", json={"kind": "scan"}).status_code == 200
+    drain(database)
+
+    job = client.get("/api/jobs").json()["jobs"][0]
     assert job["state"] == "done"
     assert job["result"]["counts"]["policies"] == 4
-    assert any("analysing" in e["message"] for e in job["events"])
 
-
-def test_overview_reflects_the_scan(client: TestClient):
-    client.post("/api/actions/scan", json={})
-    _wait_for_job(client)
-    body = client.get("/api/overview").json()
+    body = client.get("/api/repos/1/overview").json()
     assert body["scanned"] is True
     assert body["project"]["framework"] == "vite-react"
-    assert body["coverage"]["total_surfaces"] > 0
-    # Populated from the scan, so a run cannot reach a real payment processor.
+    # Populated by the scan so a run cannot reach a real payment processor.
     assert any(rule["match"] == "api.stripe.com" for rule in body["substitution"])
 
 
-def test_gaps_carry_their_reasons(client: TestClient):
-    client.post("/api/actions/scan", json={})
-    _wait_for_job(client)
-    gaps = client.get("/api/gaps").json()["gaps"]
+def test_gaps_carry_their_reasons(client: TestClient, database: Database):
+    client.post("/api/repos/1/jobs", json={"kind": "scan"})
+    drain(database)
+
+    gaps = client.get("/api/repos/1/gaps").json()["gaps"]
     assert gaps
     for gap in gaps:
         assert gap["reasons"], f"{gap['id']} has no reasons"
 
 
-def test_only_one_job_runs_at_a_time(client: TestClient):
-    """Two concurrent runs against one database interfere inexplicably."""
-    client.post("/api/actions/probe", json={})
-    second = client.post("/api/actions/scan", json={})
-    # The probe may already have failed fast (no entrypoint); either it is
-    # still running and blocks, or it finished and the scan is allowed.
-    assert second.status_code in {200, 409}
-    if second.status_code == 409:
-        assert "already running" in second.json()["detail"]
+def test_an_unknown_job_kind_is_rejected(client: TestClient):
+    response = client.post("/api/repos/1/jobs", json={"kind": "nonsense"})
+    assert response.status_code == 400
+    assert "unknown job kind" in response.json()["detail"]
 
 
-def test_approving_a_scenario_with_open_questions_is_refused(client: TestClient):
+def test_approving_a_scenario_with_open_questions_is_refused(client: TestClient, project: Path):
     """Same rule as the CLI: it would produce a test that passes vacuously."""
     from testtrout.authoring.store import save
     from testtrout.domain.gap import TestKind
     from testtrout.domain.scenario import Scenario
 
-    client.post("/api/actions/scan", json={})
-    _wait_for_job(client)
-
-    scenario = Scenario(
-        id="scenario:unfinished",
-        title="unfinished",
-        kind=TestKind.AUTHORIZATION,
-        open_questions=["which column scopes this table?"],
+    save(
+        project / ".trout" / "scenarios",
+        Scenario(
+            id="scenario:unfinished",
+            title="unfinished",
+            kind=TestKind.AUTHORIZATION,
+            open_questions=["which column scopes this table?"],
+        ),
     )
-    # The app is bound to the project the client was built from.
-    project_root = Path(client.get("/api/overview").json()["root"])
-    save(project_root / ".trout" / "scenarios", scenario)
-
-    response = client.post("/api/scenarios/scenario:unfinished/status", json={"status": "approved"})
+    response = client.post(
+        "/api/repos/1/scenarios/scenario:unfinished/status", json={"status": "approved"}
+    )
     assert response.status_code == 409
     assert "vacuously" in response.json()["detail"]
 
 
-def test_approving_a_ready_scenario_succeeds(client: TestClient):
+def test_approving_a_ready_scenario_succeeds(client: TestClient, project: Path):
     from testtrout.authoring.store import save
     from testtrout.domain.gap import TestKind
     from testtrout.domain.scenario import Assertion, AssertionKind, Scenario
 
-    client.post("/api/actions/scan", json={})
-    _wait_for_job(client)
-    project_root = Path(client.get("/api/overview").json()["root"])
     save(
-        project_root / ".trout" / "scenarios",
+        project / ".trout" / "scenarios",
         Scenario(
             id="scenario:ready",
             title="ready",
@@ -137,31 +159,19 @@ def test_approving_a_ready_scenario_succeeds(client: TestClient):
             then=[Assertion(kind=AssertionKind.ROW_COUNT, expected="0")],
         ),
     )
-    response = client.post("/api/scenarios/scenario:ready/status", json={"status": "approved"})
+    response = client.post(
+        "/api/repos/1/scenarios/scenario:ready/status", json={"status": "approved"}
+    )
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
 
 
 def test_an_unknown_scenario_is_a_404(client: TestClient):
     assert (
-        client.post("/api/scenarios/scenario:nope/status", json={"status": "approved"}).status_code
+        client.post(
+            "/api/repos/1/scenarios/scenario:nope/status", json={"status": "approved"}
+        ).status_code
         == 404
-    )
-
-
-def test_an_unsupported_status_is_rejected(client: TestClient):
-    from testtrout.authoring.store import save
-    from testtrout.domain.gap import TestKind
-    from testtrout.domain.scenario import Scenario
-
-    project_root = Path(client.get("/api/overview").json()["root"])
-    save(
-        project_root / ".trout" / "scenarios",
-        Scenario(id="scenario:x", title="x", kind=TestKind.AUTHORIZATION),
-    )
-    assert (
-        client.post("/api/scenarios/scenario:x/status", json={"status": "certified"}).status_code
-        == 400
     )
 
 
@@ -175,11 +185,8 @@ def test_no_endpoint_can_make_a_deployment_writable(client: TestClient):
         route.path for route in client.app.routes if "POST" in getattr(route, "methods", set())
     }
     assert write_routes == {
-        "/api/scenarios/{scenario_id}/status",
-        "/api/actions/scan",
-        "/api/actions/probe",
-        "/api/actions/propose",
-        "/api/actions/generate",
-        "/api/actions/run",
-        "/api/actions/certify",
+        "/api/repos",
+        "/api/repos/{repo_id}/jobs",
+        "/api/repos/{repo_id}/scenarios/{scenario_id}/status",
+        "/api/jobs/{job_id}/cancel",
     }

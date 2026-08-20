@@ -9,6 +9,44 @@ what is missing — call it whenever a step fails, before trying anything else.
 
 ---
 
+## The short way
+
+```bash
+pip install testtrout
+trout up
+```
+
+Storage, worker, and interface, all local. Link a repository from the page, or:
+
+```bash
+trout link ~/code/my-app          # local folder, never modified
+trout link --github owner/name    # cloned into ~/.testtrout/repos
+```
+
+A scan runs automatically on link. The rest of this document is the same workflow
+from the terminal, plus what to do when a step fails.
+
+**Storage lives in two places, on purpose.** Your scenario specs and generated tests
+stay in the repository — committed, reviewable in a pull request, moving with a branch.
+Run history, coverage over time, and the job queue go in SQLite under `~/.testtrout`,
+because no arrangement of files in one repo can answer "is this test getting flakier".
+
+### GitHub access
+
+Checked in order: `GITHUB_TOKEN`, then the `gh` CLI if you are logged in, then a token
+stored by TestTrout. The first two mean it never holds a credential at all. To store
+one explicitly:
+
+```bash
+trout github-login
+```
+
+It is written to `~/.testtrout/github` with owner-only permissions, never into the
+database — database files get copied, backed up, and attached to bug reports in ways
+people do not think about.
+
+---
+
 ## Step 1 — Install
 
 ```bash
@@ -359,7 +397,6 @@ where inconsistency is the signal being measured.
 ## The web interface
 
 ```bash
-pip install 'testtrout[web]'
 trout web            # http://127.0.0.1:7411
 ```
 
@@ -437,7 +474,11 @@ model:
 | `trout run` | generated tests + toolchain | Execute the suite |
 | `trout certify` | generated tests | Prove scenarios are deterministic |
 | `trout report` | a run | Results and evidence |
-| `trout web` | — | Local web interface |
+| `trout up` | — | Start storage, worker, and interface |
+| `trout link` | — | Link a local folder or clone from GitHub |
+| `trout repos` | — | List linked repositories |
+| `trout worker` | — | Standalone worker |
+| `trout web` | — | `trout up` scoped to one repository |
 | `trout mcp` | — | MCP server for coding agents |
 
 Every command in the MVP is implemented. GitHub pull-request integration is the

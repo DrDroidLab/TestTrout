@@ -27,8 +27,9 @@ Or use the MCP server instead of shelling out:
 pip install 'testtrout[mcp]' && trout mcp /path/to/project
 ```
 
-There is also a web interface (`trout web`) over the same state, if the user
-prefers a screen for reviewing gaps and approving scenarios.
+There is also an app (`trout up`) over the same state — storage, a worker, and a
+web interface — if the user prefers a screen. It can hold several repositories at
+once. The CLI and MCP work identically whether or not it is running.
 
 ## Rules
 

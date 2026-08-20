@@ -4,9 +4,10 @@
 
 # TestTrout
 
-**The testing assistant for coding agents.**
+**The testing assistant for AI-built apps.**
 
-Your agent can write the code. TestTrout is how it finds out whether the code still works.
+Run it as an app, or hand it to your coding agent over MCP.
+Either way it writes the tests your app never had, and tells you when they break.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
@@ -31,19 +32,42 @@ ends with *"looks good to me"* from the thing that just wrote the code.
 
 TestTrout closes that loop. It reads the repository, connects to the running
 deployment, works out what is untested and in what order it matters, writes real tests,
-runs them, and reports results your agent can actually reason about.
+runs them, and reports results you can actually act on.
 
-It is built to be **driven by an agent**. Everything is typed MCP tools and JSON. The
-human interfaces — a CLI and an optional web view — exist for when you want to look.
+## Get it running
 
-## Give it to your agent
+```bash
+pip install testtrout
+trout up
+```
+
+That starts everything: storage, a background worker, and the interface at
+`localhost:7411`. No Docker, no daemon, no database to install — storage is SQLite
+under `~/.testtrout` and the worker runs in-process.
+
+Then link a repository, from the interface or the terminal:
+
+```bash
+trout link ~/code/my-app          # a folder you already have
+trout link --github owner/name    # cloned with your GitHub token
+```
+
+Linking a local folder never modifies it. A scan starts automatically, and from there
+the interface walks you through connecting a deployment, reviewing what is untested,
+approving tests, and running them.
+
+## Or stay in your coding agent
+
+The app is one way in, not the only one. Everything it does is available as typed MCP
+tools and as CLI commands, so anyone who would rather not leave their editor does not
+have to:
 
 ```bash
 pip install 'testtrout[mcp]'
 trout mcp /path/to/your/project
 ```
 
-Then point your agent at the skill in [`.claude/skills/`](.claude/skills/), or tell it:
+Point your agent at the skill in [`.claude/skills/`](.claude/skills/), or tell it:
 
 > Use the TestTrout MCP server. Scan the repo, show me what's untested ranked by
 > importance, draft tests for the top five, and run them.
@@ -105,10 +129,9 @@ real browser, or `inferred` by a model — and inferred alone can never block an
 signal. Auth failures, unreachable databases, and blocked third-party calls are about
 the harness, and an inconclusive run is *never* upgraded to a pass.
 
-## For humans
+## Everything from the terminal
 
 ```bash
-pip install testtrout
 trout scan          # understand the code
 trout init          # connect a deployment
 trout gaps          # what's missing, ranked, with reasons
@@ -117,10 +140,24 @@ trout run           # execute, with evidence behind every result
 
 Every command supports `--json`. Full walkthrough in [docs/setup.md](docs/setup.md).
 
+## How it stores things
+
+Your test suite stays in your repository, committed and reviewable:
+
+```
+.trout/scenarios/*.yaml    what each test asserts, in plain language
+.trout/config.yaml         deployments and env: references, never secrets
+tests/trout/               generated Playwright and Vitest files
+```
+
+Run history, coverage over time, and the job queue live in SQLite under
+`~/.testtrout`. That split is deliberate: the suite belongs next to the code where a
+pull request can review it, and the questions files cannot answer — is this test
+getting flakier, is coverage going up — belong in a database.
+
 ### Optional web view
 
 ```bash
-pip install 'testtrout[web]'
 trout web
 ```
 
@@ -173,8 +210,9 @@ stacks are an adapter away: see [docs/adapters.md](docs/adapters.md).
 |---|---|
 | ✅ | Repository analysis, deployment probing, gap ranking |
 | ✅ | Scenario authoring, generation, execution, certification |
-| ✅ | MCP server, CLI, web view |
+| ✅ | MCP server, CLI, and a local app with storage and a worker |
 | ✅ | Change-based test selection, base-branch differential |
+| ✅ | Multi-repository: link local folders or clone with a GitHub token |
 | 🔜 | GitHub pull-request checks |
 | 🔜 | Observed coverage index (today's selection uses declared coverage) |
 

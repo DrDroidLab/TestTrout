@@ -28,12 +28,18 @@ dependencies = [
   "tree-sitter-typescript>=0.23",
   "anthropic>=0.69",
   "openai>=1.60",
+  # `trout up` is the primary entry point, so the app must run on a bare
+  # install. Both are pure Python and small.
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
 ]
 
 [project.optional-dependencies]
+# Heavier or situational. `probe` pulls a browser; `mcp` is only needed to
+# drive TestTrout from a coding agent.
 probe = ["playwright>=1.49"]
-web   = ["fastapi>=0.115", "uvicorn>=0.32"]
 mcp   = ["mcp>=2.0"]
+all   = ["playwright>=1.49", "mcp>=2.0"]
 
 [dependency-groups]
 dev = [

@@ -191,6 +191,14 @@ scenario.
 green.** They exist to stop a test run destroying real data or charging a real
 card. If a run is blocked by them, that is information, not an obstacle.
 
+## If the user is running the app
+
+`trout up` starts a local app (storage, worker, web interface) that can hold
+several repositories. It reads and writes the same `.trout/` files, so the CLI
+and MCP work identically whether or not it is running — no coordination needed.
+
+If the user mentions the app, `trout repos --json` lists what is linked.
+
 ## MCP server
 
 If shelling out is awkward, the same capabilities are available as typed tools:

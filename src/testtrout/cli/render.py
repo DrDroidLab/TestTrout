@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from testtrout.app.models import RepoRecord
 from testtrout.domain.gap import GapMap
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import Divergence, ProbeResult
@@ -450,3 +451,28 @@ def selection(chosen: Selection) -> None:
 
     for note in chosen.notes:
         console.print(f"[dim]note: {note}[/dim]")
+
+
+def repo_table(records: list[RepoRecord]) -> None:
+    """Print linked repositories."""
+    table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
+    table.add_column("id", justify="right", style="dim")
+    table.add_column("repo", style="bold")
+    table.add_column("stack")
+    table.add_column("last run")
+    table.add_column("path", style="dim", overflow="fold")
+
+    for record in records:
+        stack = " + ".join(x for x in (record.framework, record.backend) if x) or "[dim]?[/dim]"
+        status = record.last_run_status
+        table.add_row(
+            str(record.id),
+            record.name + ("" if record.exists else " [red](missing)[/red]"),
+            stack,
+            f"[{ {'pass': 'green', 'fail': 'red'}.get(status, 'yellow') }]{status}[/]"
+            if status
+            else "[dim]never[/dim]",
+            record.path,
+        )
+    console.print()
+    console.print(table)

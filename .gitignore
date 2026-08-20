@@ -30,3 +30,8 @@ htmlcov/
 
 # Fixture apps stay pristine; tests/golden/expected/ is the committed artifact.
 examples/*/.trout/
+
+# Application storage lives under ~/.testtrout, but never commit a stray copy.
+testtrout.db
+testtrout.db-*
+.testtrout/

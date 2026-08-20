@@ -136,12 +136,44 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { color: var(--muted); padding: 28px 0; text-align: center; }
 </style>
+
+<style>
+  .repopicker { display:flex; align-items:center; gap:8px; }
+  select.repo {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 13px; max-width: 280px;
+  }
+  dialog {
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
+    color: var(--text); padding: 20px; max-width: 560px; width: 92%;
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.5); }
+  dialog h3 { margin: 0 0 4px; font-size: 15px; }
+  dialog input[type=text] {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+    font: inherit; font-size: 13px; margin-top: 6px;
+  }
+  .tabs { display:flex; gap:4px; margin: 14px 0 10px; }
+  .tabs button { font-size: 12.5px; }
+  .repolist { max-height: 260px; overflow-y: auto; margin-top: 10px; }
+  .repolist div.row {
+    display:flex; gap:10px; align-items:center; padding: 6px 8px; border-radius: 6px;
+    cursor: pointer;
+  }
+  .repolist div.row:hover { background: var(--panel); }
+  .spark { display:flex; gap:3px; align-items:flex-end; height: 26px; margin-top: 8px; }
+  .spark i { width: 7px; border-radius: 2px; display:block; }
+</style>
 </head>
 <body>
 
 <header>
-  <h1>TestTrout</h1>
-  <span class="path mono" id="root"></span>
+  <h1>🐟 TestTrout</h1>
+  <div class="repopicker">
+    <select class="repo" id="repo-select"></select>
+    <button class="action" id="link-btn">Link repo</button>
+  </div>
   <span class="spacer"></span>
   <span id="safety"></span>
   <span class="muted mono" id="version"></span>
@@ -153,14 +185,16 @@
   <button data-tab="scenarios">Scenarios</button>
   <button data-tab="surfaces">Surfaces</button>
   <button data-tab="runs">Runs</button>
+  <button data-tab="jobs">Activity</button>
   <button data-tab="agent">Connect an agent</button>
 </nav>
 
 <main>
   <section id="overview" class="active">
-    <div class="toolbar">
+    <div class="toolbar" id="actions">
       <button class="action" data-act="scan">Scan</button>
       <button class="action" data-act="probe">Probe</button>
+      <button class="action" data-act="intent">Capture intent</button>
       <button class="action" data-act="propose">Propose</button>
       <button class="action" data-act="generate">Generate</button>
       <button class="action primary" data-act="run">Run</button>
@@ -174,7 +208,7 @@
   <section id="gaps">
     <div class="toolbar">
       <span class="muted">Ranked by what to write first. Every rank is the sum of named contributions.</span>
-      <span class="spacer"></span>
+      <span class="spacer" style="flex:1"></span>
       <button class="action" data-act="propose">Draft top 5</button>
     </div>
     <div id="gaps-body"></div>
@@ -183,7 +217,7 @@
   <section id="scenarios">
     <div class="toolbar">
       <span class="muted">Approve what you want in the suite. Nothing is approved for you.</span>
-      <span class="spacer"></span>
+      <span class="spacer" style="flex:1"></span>
       <button class="action" data-act="generate">Generate approved</button>
     </div>
     <div id="scenarios-body"></div>
@@ -191,8 +225,33 @@
 
   <section id="surfaces"><div id="surfaces-body"></div></section>
   <section id="runs"><div id="runs-body"></div></section>
+  <section id="jobs"><div id="jobs-body"></div></section>
   <section id="agent"><div id="agent-body"></div></section>
 </main>
+
+<dialog id="link-dialog">
+  <h3>Link a repository</h3>
+  <p class="muted" style="font-size:13px;margin:0">
+    A local directory is linked in place and never modified. A GitHub repository
+    is cloned into <code>~/.testtrout/repos</code> first.
+  </p>
+  <div class="tabs">
+    <button class="action" data-link-tab="local">Local folder</button>
+    <button class="action" data-link-tab="github">GitHub</button>
+  </div>
+  <div id="link-local">
+    <input type="text" id="link-path" placeholder="/path/to/your/project" autocomplete="off">
+  </div>
+  <div id="link-github" style="display:none">
+    <div id="gh-status" class="muted" style="font-size:13px"></div>
+    <div class="repolist" id="gh-repos"></div>
+  </div>
+  <div class="toolbar" style="margin-bottom:0">
+    <span class="spacer" style="flex:1"></span>
+    <button class="action" id="link-cancel">Cancel</button>
+    <button class="action primary" id="link-confirm">Link</button>
+  </div>
+</dialog>
 
 <div id="log">
   <div class="head">
@@ -210,7 +269,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pill = (v) => `<span class="pill ${esc(v)}">${esc(String(v).replace(/_/g, ' '))}</span>`;
 
-let state = {};
+let state = { repos: [], repoId: null };
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -233,86 +292,193 @@ document.querySelectorAll('nav button').forEach((b) => {
   };
 });
 
+// --------------------------------------------------------------- repos
+
+$('repo-select').onchange = (e) => {
+  state.repoId = Number(e.target.value) || null;
+  localStorage.setItem('trout.repo', state.repoId);
+  loadRepo();
+};
+
+function renderRepoPicker() {
+  const sel = $('repo-select');
+  if (!state.repos.length) {
+    sel.innerHTML = '<option>no repositories linked</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = state.repos.map((r) =>
+    `<option value="${r.id}" ${r.id === state.repoId ? 'selected' : ''}>` +
+    `${esc(r.name)}${r.exists ? '' : ' (missing)'}${r.busy ? ' · ' + esc(r.busy_with) + '…' : ''}` +
+    `</option>`).join('');
+}
+
+// ---------------------------------------------------------- link dialog
+
+const dialog = $('link-dialog');
+$('link-btn').onclick = () => { dialog.showModal(); loadGithub(); };
+$('link-cancel').onclick = () => dialog.close();
+document.querySelectorAll('[data-link-tab]').forEach((b) => {
+  b.onclick = () => {
+    const github = b.dataset.linkTab === 'github';
+    $('link-local').style.display = github ? 'none' : '';
+    $('link-github').style.display = github ? '' : 'none';
+  };
+});
+
+let selectedRemote = null;
+async function loadGithub() {
+  $('gh-status').textContent = 'checking for a GitHub token…';
+  try {
+    const d = await api('/api/github/repos');
+    if (!d.authenticated) {
+      $('gh-status').innerHTML = esc(d.error || 'No token found.') +
+        ' Set <code>GITHUB_TOKEN</code>, run <code>gh auth login</code>, or ' +
+        '<code>trout github-login</code>.';
+      $('gh-repos').innerHTML = '';
+      return;
+    }
+    $('gh-status').textContent = `signed in as ${d.account}`;
+    $('gh-repos').innerHTML = d.repos.map((r) =>
+      `<div class="row" data-slug="${esc(r.full_name)}">
+         <strong>${esc(r.full_name)}</strong>
+         ${r.private ? '<span class="pill low">private</span>' : ''}
+         <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.description)}</span>
+       </div>`).join('');
+    $('gh-repos').querySelectorAll('.row').forEach((row) => {
+      row.onclick = () => {
+        selectedRemote = row.dataset.slug;
+        $('gh-repos').querySelectorAll('.row').forEach((x) =>
+          x.style.background = x === row ? 'var(--panel-2)' : '');
+      };
+    });
+  } catch (e) {
+    $('gh-status').textContent = e.message;
+  }
+}
+
+$('link-confirm').onclick = async () => {
+  const usingGithub = $('link-github').style.display !== 'none';
+  const body = usingGithub
+    ? { source: 'github', slug: selectedRemote }
+    : { source: 'local', path: $('link-path').value.trim() };
+  try {
+    const repo = await api('/api/repos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    dialog.close();
+    state.repoId = repo.id;
+    localStorage.setItem('trout.repo', repo.id);
+    await loadRepos();
+    await loadRepo();
+    openLog('scan');
+  } catch (e) { alert(e.message); }
+};
+
 // -------------------------------------------------------------- actions
 
 document.querySelectorAll('[data-act]').forEach((b) => {
   b.onclick = async () => {
-    const act = b.dataset.act;
-    const body = act === 'propose' ? { limit: 5 } : {};
+    if (!state.repoId) { alert('Link a repository first.'); return; }
+    const kind = b.dataset.act;
+    const options = kind === 'propose' ? { limit: 5 } : {};
     try {
-      await api(`/api/actions/${act}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      const job = await api(`/api/repos/${state.repoId}/jobs`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, options }),
       });
-      openLog(act);
-      followJob();
+      openLog(kind, job.id);
     } catch (e) { alert(e.message); }
   };
 });
 
-function openLog(name) {
+function openLog(name, jobId) {
   $('log').classList.add('open');
   $('log-name').textContent = name;
   $('log-lines').innerHTML = '';
   $('log-state').innerHTML = '<span class="spinner"></span>';
   setBusy(true);
+  if (jobId) follow(jobId);
+  else pollLatestJob(name);
+}
+
+async function pollLatestJob(kind) {
+  const d = await api(`/api/jobs?repo_id=${state.repoId}&limit=5`).catch(() => null);
+  const job = d && d.jobs.find((j) => j.kind === kind);
+  if (job) follow(job.id);
 }
 
 function setBusy(busy) {
   document.querySelectorAll('[data-act]').forEach((b) => { b.disabled = busy; });
 }
 
-function followJob() {
-  const source = new EventSource('/api/job/stream');
+function follow(jobId) {
+  const source = new EventSource(`/api/jobs/${jobId}/stream`);
   source.onmessage = (event) => {
     const line = JSON.parse(event.data);
-    if (line.level === 'done') {
+    if (line.done) {
       source.close();
-      $('log-state').textContent = line.message === 'failed' ? '✕' : '✓';
+      $('log-state').textContent = line.state === 'failed' ? '✕' : '✓';
+      if (line.error) {
+        const div = document.createElement('div');
+        div.className = 'line error';
+        div.textContent = line.error;
+        $('log-lines').appendChild(div);
+      }
       setBusy(false);
-      loadAll();
+      loadRepos(); loadRepo();
       return;
     }
     const div = document.createElement('div');
-    div.className = `line ${line.level}`;
+    div.className = 'line info';
     div.textContent = line.message;
     $('log-lines').appendChild(div);
     $('log').scrollTop = $('log').scrollHeight;
   };
-  source.onerror = () => { source.close(); setBusy(false); loadAll(); };
+  source.onerror = () => { source.close(); setBusy(false); loadRepo(); };
 }
 
 // --------------------------------------------------------------- render
 
 function render(tab) {
   ({ overview: renderOverview, gaps: renderGaps, scenarios: renderScenarios,
-     surfaces: renderSurfaces, runs: renderRuns, agent: renderAgent }[tab] || (() => {}))();
+      surfaces: renderSurfaces, runs: renderRuns, jobs: renderJobs,
+      agent: renderAgent }[tab] || (() => {}))();
 }
 
 function renderOverview() {
   const o = state.overview || {};
-  $('root').textContent = o.root || '';
-  $('version').textContent = o.version ? `v${o.version}` : '';
+  const w = (o.entrypoints || []).filter((e) => e.writable);
+  $('safety').innerHTML = !state.repoId ? ''
+    : (o.entrypoints || []).length === 0
+      ? '<span class="pill low">no deployment configured</span>'
+      : w.length ? `<span class="pill high">${w.length} writable deployment(s)</span>`
+                 : '<span class="pill pass">all deployments read-only</span>';
 
-  const writable = (o.entrypoints || []).filter((e) => e.writable);
-  $('safety').innerHTML = (o.entrypoints || []).length === 0
-    ? '<span class="pill low">no deployment configured</span>'
-    : writable.length
-      ? `<span class="pill high">${writable.length} writable deployment(s)</span>`
-      : '<span class="pill pass">all deployments read-only</span>';
-
+  if (!state.repoId) {
+    $('cards').innerHTML = '';
+    $('overview-notes').innerHTML =
+      '<div class="empty">No repository linked yet. Press <strong>Link repo</strong> to start.</div>';
+    $('overview-config').innerHTML = '';
+    return;
+  }
   if (!o.scanned) {
     $('cards').innerHTML = '';
     $('overview-notes').innerHTML =
-      '<div class="empty">No scan yet. Press <strong>Scan</strong> to analyse this repository.</div>';
+      '<div class="empty">Not scanned yet. Press <strong>Scan</strong>.</div>';
     $('overview-config').innerHTML = '';
     return;
   }
 
   const c = o.coverage || {};
   const s = o.scenarios || {};
-  const run = o.last_run;
+  const hist = o.history || [];
+  const last = hist[0];
+  const colours = { pass: 'var(--pass)', fail: 'var(--fail)',
+                    warning: 'var(--warn)', inconclusive: 'var(--incon)' };
+
   $('cards').innerHTML = `
     <div class="card">
       <div class="label">Surface coverage</div>
@@ -343,8 +509,11 @@ function renderOverview() {
     </div>
     <div class="card">
       <div class="label">Last run</div>
-      <div class="value">${run ? pill(run.status) : '<span class="muted" style="font-size:16px">never</span>'}</div>
-      <div class="sub">${run ? `${run.duration_seconds}s · ${Object.entries(run.counts).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ')}` : ''}</div>
+      <div class="value">${last ? pill(last.status) : '<span class="muted" style="font-size:16px">never</span>'}</div>
+      <div class="spark">${hist.slice(0, 20).reverse().map((h) =>
+        `<i style="height:${Math.max(6, Math.min(26, (h.duration_seconds || 1) * 2))}px;` +
+        `background:${colours[h.status] || 'var(--border)'}" title="${esc(h.run_id)} ${esc(h.status)}"></i>`).join('')}</div>
+      <div class="sub">${hist.length} run(s) recorded</div>
     </div>`;
 
   $('overview-notes').innerHTML = (o.notes || []).length
@@ -352,10 +521,14 @@ function renderOverview() {
       (o.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('') + '</div>'
     : '';
 
+  const repo = o.repo || {};
   $('overview-config').innerHTML = `
     <h3 style="margin:22px 0 0;font-size:13px">Configuration</h3>
     <table>
-      <tr><td class="muted" style="width:180px">Project</td><td>${esc(o.project?.framework || '?')}${o.project?.backend ? ' + ' + esc(o.project.backend) : ''}</td></tr>
+      <tr><td class="muted" style="width:190px">Repository</td><td>${esc(repo.name || '')}
+        <span class="mono muted">${esc(repo.path || '')}</span>
+        ${repo.remote ? `<span class="pill low">${esc(repo.remote)}</span>` : ''}</td></tr>
+      <tr><td class="muted">Project</td><td>${esc(o.project?.framework || '?')}${o.project?.backend ? ' + ' + esc(o.project.backend) : ''}</td></tr>
       <tr><td class="muted">Deployments</td><td>${(o.entrypoints || []).map((e) =>
         `<div>${esc(e.name)} <span class="mono muted">${esc(e.url)}</span> ${e.writable
           ? '<span class="pill high">writable</span>'
@@ -380,14 +553,12 @@ function renderGaps() {
         <td>${g.blockers?.length ? '<span class="pill warning">blocked</span> ' : ''}${esc(g.title)}</td>
         <td class="mono muted">${g.score}</td>
       </tr>
-      <tr id="gap${i}" style="display:none"><td colspan="4">
-        <div class="detail">
-          <strong>Why it ranks here</strong>
-          <ul>${(g.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
-          ${g.blockers?.length ? `<div style="margin-top:8px"><strong>Blocked</strong><ul>${
-            g.blockers.map((b) => `<li>${esc(b.message)}</li>`).join('')}</ul></div>` : ''}
-        </div>
-      </td></tr>`).join('')}
+      <tr id="gap${i}" style="display:none"><td colspan="4"><div class="detail">
+        <strong>Why it ranks here</strong>
+        <ul>${(g.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        ${g.blockers?.length ? `<div style="margin-top:8px"><strong>Blocked</strong><ul>${
+          g.blockers.map((b) => `<li>${esc(b.message)}</li>`).join('')}</ul></div>` : ''}
+      </div></td></tr>`).join('')}
   </table>`;
 }
 
@@ -473,7 +644,6 @@ function renderRuns() {
             <td class="mono">${esc(x.scenario_id.replace('scenario:', ''))}</td>
             <td>${esc(x.message || '')}
               ${x.evidence?.reproduce ? `<div class="muted mono">${esc(x.evidence.reproduce)}</div>` : ''}
-              ${x.evidence?.trace ? `<div class="muted mono">trace: ${esc(x.evidence.trace)}</div>` : ''}
             </td></tr>`).join('')}
         </table>
         ${(r.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
@@ -481,15 +651,34 @@ function renderRuns() {
     </div>`).join('');
 }
 
+function renderJobs() {
+  const jobs = (state.jobs || {}).jobs || [];
+  if (!jobs.length) { $('jobs-body').innerHTML = '<div class="empty">Nothing has run yet.</div>'; return; }
+  $('jobs-body').innerHTML = `<table>
+    <tr><th>State</th><th>Job</th><th>Duration</th><th>Detail</th></tr>
+    ${jobs.map((j, i) => `
+      <tr class="clickable" onclick="toggle('job${i}')">
+        <td>${pill(j.state === 'done' ? 'pass' : j.state === 'failed' ? 'fail' : j.state)}</td>
+        <td class="mono">${esc(j.kind)}</td>
+        <td class="muted">${j.duration_seconds != null ? j.duration_seconds + 's' : '—'}</td>
+        <td class="muted">${esc(j.error || (j.result ? JSON.stringify(j.result) : ''))}</td>
+      </tr>
+      <tr id="job${i}" style="display:none"><td colspan="4"><div class="detail">
+        ${(j.log || []).map((l) => `<div class="mono" style="font-size:12px">${esc(l)}</div>`).join('') ||
+          '<span class="muted">no output</span>'}
+      </div></td></tr>`).join('')}
+  </table>`;
+}
+
 function renderAgent() {
-  const root = (state.overview || {}).root || '.';
+  const repo = (state.overview || {}).repo || {};
   $('agent-body').innerHTML = `
-    <p>This tool is usable as a QA backend for a coding agent. Everything on this
-       page is available as typed MCP tools, plus <code>.trout/</code> state as resources.</p>
+    <p>The app is one way in. Everything here is also available as typed MCP tools
+       and as CLI commands, so anyone who would rather stay in their coding agent can.</p>
     <h3 style="font-size:13px">Register the MCP server</h3>
     <pre>pip install 'testtrout[mcp]'
-trout mcp ${esc(root)}</pre>
-    <p class="muted">The server is bound to this one project, so an agent cannot act on the
+trout mcp ${esc(repo.path || '/path/to/project')}</pre>
+    <p class="muted">The server is bound to one project, so an agent cannot act on the
        wrong repository.</p>
     <h3 style="font-size:13px;margin-top:20px">Tools</h3>
     <pre>scan  surfaces  gaps  intent  probe  propose
@@ -501,16 +690,12 @@ scenarios  approve  generate  run  certify  report  doctor</pre>
       <ul>
         <li>Read <code>status</code> before <code>results</code>. An
             <code>inconclusive</code> run says nothing about the product.</li>
-        <li>Only <code>assertion_failure</code> is a product signal. Auth and
-            environment failures are about the harness.</li>
+        <li>Only <code>assertion_failure</code> is a product signal.</li>
         <li>Quote a gap's <code>reasons</code> rather than re-deriving a ranking.</li>
         <li>Never approve scenarios on the user's behalf.</li>
-        <li>Never mark a deployment disposable, or disable the substitution
-            boundary, to make a run go green.</li>
+        <li>Never mark a deployment disposable to make a run go green.</li>
       </ul>
-    </div>
-    <p class="muted" style="margin-top:18px">The CLI works the same way — every command
-       supports <code>--json</code>.</p>`;
+    </div>`;
 }
 
 function toggle(id) {
@@ -520,30 +705,46 @@ function toggle(id) {
 
 async function setStatus(id, status) {
   try {
-    await api(`/api/scenarios/${encodeURIComponent(id)}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await api(`/api/repos/${state.repoId}/scenarios/${encodeURIComponent(id)}/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    await loadAll();
+    await loadRepo();
   } catch (e) { alert(e.message); }
 }
 
 // ----------------------------------------------------------------- load
 
-async function loadAll() {
-  const [overview, gaps, scenarios, surfaces, runs] = await Promise.all([
-    api('/api/overview').catch(() => ({})),
-    api('/api/gaps').catch(() => ({})),
-    api('/api/scenarios').catch(() => ({})),
-    api('/api/surfaces').catch(() => ({})),
-    api('/api/runs').catch(() => ({})),
-  ]);
-  state = { overview, gaps, scenarios, surfaces, runs };
-  render(document.querySelector('nav button.active').dataset.tab);
+async function loadRepos() {
+  const d = await api('/api/repos').catch(() => ({ repos: [] }));
+  state.repos = d.repos || [];
+  $('version').textContent = d.version ? `v${d.version}` : '';
+  if (!state.repoId) {
+    const saved = Number(localStorage.getItem('trout.repo'));
+    state.repoId = state.repos.some((r) => r.id === saved) ? saved
+                 : (state.repos[0] ? state.repos[0].id : null);
+  }
+  renderRepoPicker();
 }
 
-loadAll();
+async function loadRepo() {
+  if (!state.repoId) { render(activeTab()); return; }
+  const base = `/api/repos/${state.repoId}`;
+  const [overview, gaps, scenarios, surfaces, runs, jobs] = await Promise.all([
+    api(`${base}/overview`).catch(() => ({})),
+    api(`${base}/gaps`).catch(() => ({})),
+    api(`${base}/scenarios`).catch(() => ({})),
+    api(`${base}/surfaces`).catch(() => ({})),
+    api(`${base}/runs`).catch(() => ({})),
+    api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
+  ]);
+  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs });
+  render(activeTab());
+}
+
+const activeTab = () => document.querySelector('nav button.active').dataset.tab;
+
+(async () => { await loadRepos(); await loadRepo(); })();
 </script>
 </body>
 </html>

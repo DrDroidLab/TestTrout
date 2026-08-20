@@ -7,6 +7,25 @@ All notable changes to this project are documented here. This project follows
 
 ### Added
 
+- **`trout up` — the application.** Storage, a background worker, and the web
+  interface, started with one command. SQLite under `~/.testtrout` and an
+  in-process worker: no Docker, no daemon, nothing to install first.
+- **Repository linking.** `trout link <path>` for a folder you already have,
+  which is never modified, or `trout link --github owner/name` to clone with a
+  personal access token. The interface can do both.
+- GitHub tokens are read from `GITHUB_TOKEN`, then the `gh` CLI, then a file at
+  `~/.testtrout/github` with owner-only permissions — never the database, and
+  never embedded in a git remote URL.
+- A SQLite-backed job queue. Jobs are serialised per repository, because two
+  runs against one database interfere in ways neither can explain; different
+  repositories proceed in parallel.
+- Jobs interrupted by a worker crash are failed rather than retried — a
+  half-finished run may have left state behind.
+- The web interface is now multi-repository, with a picker, run history, and an
+  activity view.
+- `fastapi` and `uvicorn` moved into the base install, since `trout up` is the
+  primary entry point. The `web` extra is gone; `probe` and `mcp` remain.
+
 - **Phase 6 — web interface.** `trout web` serves a local page over the same
   `.trout/` state: coverage, the ranked gap list with its reasoning, scenario
   review and approval, run history with evidence, and a live log over
