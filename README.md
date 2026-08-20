@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🐟 TestTrout
+<img src="assets/trout-256.png" alt="" width="112" height="112">
+
+# TestTrout
 
 **The testing assistant for coding agents.**
 
