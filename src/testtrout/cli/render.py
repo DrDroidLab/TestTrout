@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from testtrout.app.models import RepoRecord
+from testtrout.app.settings import ConfigView
 from testtrout.domain.gap import GapMap
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import Divergence, ProbeResult
@@ -476,3 +477,73 @@ def repo_table(records: list[RepoRecord]) -> None:
         )
     console.print()
     console.print(table)
+
+
+def plan(view: ConfigView) -> None:
+    """Print what is possible now and what each gap would unlock."""
+    console.print()
+    ready = [r for r in view.plan.readiness if r.ready]
+    console.print(f"[bold]{len(ready)} of {len(view.plan.readiness)}[/bold] capabilities available")
+    console.print()
+
+    for item in view.plan.readiness:
+        mark = "[green]✓[/green]" if item.ready else "[yellow]○[/yellow]"
+        console.print(f"{mark} [bold]{item.capability.label}[/bold]")
+        console.print(f"   [dim]{item.detail}[/dim]")
+        for missing in item.missing:
+            console.print(f"   [yellow]needs:[/yellow] {missing}")
+
+    unmet = [r for r in view.plan.required() if not view.env_present.get(r.name, False)]
+    if unmet:
+        console.print()
+        console.print(
+            "[bold]Credentials this app needs[/bold] [dim](discovered from its source)[/dim]"
+        )
+        table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
+        table.add_column("name", style="bold")
+        table.add_column("what it is for", overflow="fold")
+        table.add_column("found in", style="dim")
+        for requirement in unmet:
+            where = str(requirement.locations[0]) if requirement.locations else "—"
+            table.add_row(requirement.name, requirement.purpose, where)
+        console.print(table)
+        console.print()
+        console.print("[dim]set them with `trout config --set-secret NAME=value`[/dim]")
+
+
+def config_view(view: ConfigView) -> None:
+    """Print current configuration, with secret values withheld."""
+    config = view.config
+    console.print()
+    table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
+    table.add_column("setting", style="bold")
+    table.add_column("value", overflow="fold")
+
+    for entrypoint in config.entrypoints:
+        table.add_row(
+            f"deployment: {entrypoint.name}",
+            f"{entrypoint.url}  "
+            + ("[yellow]writable[/yellow]" if entrypoint.writable else "[green]read-only[/green]"),
+        )
+    if not config.entrypoints:
+        table.add_row("deployments", "[dim]none[/dim]")
+
+    table.add_row("supabase url", config.supabase.url or "[dim]not set[/dim]")
+    table.add_row("isolation", config.supabase.isolation.value)
+    table.add_row(
+        "test users",
+        ", ".join(u.role for u in config.test_users) or "[dim]none[/dim]",
+    )
+    table.add_row(
+        "model", f"{config.model.provider.value} {config.model.model or '(provider default)'}"
+    )
+    console.print(table)
+
+    if view.env_present:
+        console.print()
+        console.print(
+            "[bold]Credential values[/bold] [dim](names only; values are never shown)[/dim]"
+        )
+        for name, present in sorted(view.env_present.items()):
+            mark = "[green]set[/green]" if present else "[red]missing[/red]"
+            console.print(f"  {mark}  {name}")

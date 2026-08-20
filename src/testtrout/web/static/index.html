@@ -181,6 +181,7 @@
 
 <nav>
   <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="setup">Setup</button>
   <button data-tab="gaps">Gaps</button>
   <button data-tab="scenarios">Scenarios</button>
   <button data-tab="surfaces">Surfaces</button>
@@ -223,6 +224,7 @@
     <div id="scenarios-body"></div>
   </section>
 
+  <section id="setup"><div id="setup-body"></div></section>
   <section id="surfaces"><div id="surfaces-body"></div></section>
   <section id="runs"><div id="runs-body"></div></section>
   <section id="jobs"><div id="jobs-body"></div></section>
@@ -443,7 +445,7 @@ function follow(jobId) {
 // --------------------------------------------------------------- render
 
 function render(tab) {
-  ({ overview: renderOverview, gaps: renderGaps, scenarios: renderScenarios,
+  ({ overview: renderOverview, setup: renderSetup, gaps: renderGaps, scenarios: renderScenarios,
       surfaces: renderSurfaces, runs: renderRuns, jobs: renderJobs,
       agent: renderAgent }[tab] || (() => {}))();
 }
@@ -670,6 +672,235 @@ function renderJobs() {
   </table>`;
 }
 
+
+let pendingSecrets = {};
+
+const keyVarFor = (p) => ({ anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY',
+                            kimi: 'MOONSHOT_API_KEY' }[p] || 'ANTHROPIC_API_KEY');
+
+function renderSetup() {
+  const c = state.config || {};
+  const cfg = c.config || {};
+  const present = c.env_present || {};
+  const readiness = c.readiness || [];
+  const reqs = (c.requirements || []).filter((r) => !r.optional);
+
+  const varRow = (label, name, hint) => `
+    <tr>
+      <td class="muted" style="width:210px">${esc(label)}</td>
+      <td>
+        <input type="password" data-secret="${esc(name)}" placeholder="${
+          present[name] ? '•••••••• (set — leave blank to keep)' : 'not set'
+        }" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
+        <div class="muted mono" style="font-size:11px;margin-top:3px">${esc(name)}${hint ? ' — ' + esc(hint) : ''}</div>
+      </td>
+    </tr>`;
+
+  $('setup-body').innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <strong>What you can test right now</strong>
+      <div style="margin-top:8px">
+        ${readiness.map((r) => `
+          <div style="margin:6px 0">
+            ${r.ready ? '<span class="pill pass">ready</span>' : '<span class="pill warning">blocked</span>'}
+            <strong>${esc(r.capability.replace(/_/g, ' '))}</strong>
+            <div class="muted" style="font-size:12.5px">${esc(r.detail)}</div>
+            ${(r.missing || []).map((m) => `<div style="font-size:12.5px;color:var(--warn)">needs: ${esc(m)}</div>`).join('')}
+          </div>`).join('')}
+      </div>
+    </div>
+
+    ${reqs.length ? `<div class="card" style="margin-bottom:14px">
+      <strong>Credentials this app needs</strong>
+      <div class="muted" style="font-size:12.5px">Discovered by reading your source.</div>
+      <table>${reqs.map((r) => `<tr>
+        <td class="mono" style="width:230px">${esc(r.name)}</td>
+        <td>${esc(r.purpose)}
+          ${r.locations?.length ? `<div class="muted mono" style="font-size:11px">${esc(r.locations[0].file)}:${r.locations[0].line}</div>` : ''}</td>
+      </tr>`).join('')}</table>
+    </div>` : ''}
+
+    <div class="card" style="margin-bottom:14px">
+      <strong>Deployments</strong>
+      <div class="muted" style="font-size:12.5px">Where your app is running. Read-only unless you say otherwise.</div>
+      <table id="ep-table">
+        ${(cfg.entrypoints || []).map((e, i) => `
+          <tr>
+            <td style="width:150px"><input type="text" data-ep="name" data-i="${i}" value="${esc(e.name)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td><input type="text" data-ep="url" data-i="${i}" value="${esc(e.url)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td style="width:230px">
+              <label style="font-size:12.5px;cursor:pointer">
+                <input type="checkbox" data-ep="disposable" data-i="${i}" ${e.disposable ? 'checked' : ''}>
+                data can be destroyed
+              </label>
+              <div class="muted" style="font-size:11px">unticked = writes are blocked</div>
+            </td>
+            <td style="width:40px"><button class="action" data-remove-ep="${i}">×</button></td>
+          </tr>`).join('')}
+      </table>
+      <div class="toolbar" style="margin-bottom:0"><button class="action" id="add-ep">Add deployment</button></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <strong>Supabase</strong>
+      <table>
+        <tr><td class="muted" style="width:210px">Project URL</td>
+          <td><input type="text" id="sb-url" value="${esc(cfg.supabase?.url || '')}" placeholder="https://YOUR-REF.supabase.co" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
+        ${varRow('Anon key', 'SUPABASE_ANON_KEY', 'signs test users in')}
+        ${varRow('Service-role key', 'SUPABASE_SERVICE_ROLE_KEY', 'optional — seeding and reset only')}
+        <tr><td class="muted">Database isolation</td><td>
+          <select id="sb-isolation" class="repo" style="max-width:260px">
+            ${['scoped_seed', 'local_reset', 'branch'].map((v) =>
+              `<option value="${v}" ${cfg.supabase?.isolation === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+          <div class="muted" style="font-size:11px;margin-top:3px">scoped_seed performs no reset; local_reset needs the Supabase CLI</div>
+        </td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <strong>Test accounts</strong>
+      <div class="muted" style="font-size:12.5px">Two minimum — proving user A cannot see user B's data needs a B.</div>
+      <table id="user-table">
+        ${(cfg.test_users || []).map((u, i) => `
+          <tr>
+            <td style="width:150px"><input type="text" data-user="role" data-i="${i}" value="${esc(u.role)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td><input type="text" data-secret="TROUT_${esc(u.role.toUpperCase().replace(/-/g,'_'))}_EMAIL" placeholder="${present['TROUT_' + u.role.toUpperCase().replace(/-/g,'_') + '_EMAIL'] ? 'set — leave blank to keep' : 'email'}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td><input type="password" data-secret="TROUT_${esc(u.role.toUpperCase().replace(/-/g,'_'))}_PASSWORD" placeholder="${present['TROUT_' + u.role.toUpperCase().replace(/-/g,'_') + '_PASSWORD'] ? 'set — leave blank to keep' : 'password'}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td style="width:40px"><button class="action" data-remove-user="${i}">×</button></td>
+          </tr>`).join('')}
+      </table>
+      <div class="toolbar" style="margin-bottom:0"><button class="action" id="add-user">Add account</button></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <strong>Model provider</strong>
+      <div class="muted" style="font-size:12.5px">Only for intent capture and scenario wording. Everything else works without it.</div>
+      <table>
+        <tr><td class="muted" style="width:210px">Provider</td><td>
+          <select id="model-provider" class="repo" style="max-width:260px">
+            ${['anthropic', 'openai', 'kimi'].map((v) =>
+              `<option value="${v}" ${cfg.model?.provider === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select></td></tr>
+        <tr><td class="muted">Model</td><td><input type="text" id="model-name" value="${esc(cfg.model?.model || '')}" placeholder="provider default" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
+        ${varRow('API key', keyVarFor(cfg.model?.provider), 'stored in .env, never in committed config')}
+      </table>
+    </div>
+
+    <div class="toolbar">
+      <button class="action primary" id="save-setup">Save</button>
+      <span id="save-msg" class="muted"></span>
+    </div>`;
+
+  wireSetup();
+}
+
+/**
+ * Read the form back into state before any re-render.
+ *
+ * Adding a row or switching provider redraws the panel, and without this every
+ * unsaved field would be silently discarded — which is exactly the kind of
+ * thing that makes a settings page infuriating.
+ */
+function harvestSetup() {
+  const cfg = (state.config || {}).config || {};
+
+  cfg.entrypoints = [...document.querySelectorAll('#ep-table tr')].map((row, i) => ({
+    name: row.querySelector('[data-ep="name"]').value.trim() || `env${i}`,
+    url: row.querySelector('[data-ep="url"]').value.trim(),
+    disposable: row.querySelector('[data-ep="disposable"]').checked,
+  }));
+  cfg.test_users = [...document.querySelectorAll('#user-table tr')].map((row) => ({
+    role: row.querySelector('[data-user="role"]').value.trim(),
+  }));
+  cfg.supabase = {
+    ...(cfg.supabase || {}),
+    url: $('sb-url').value.trim(),
+    isolation: $('sb-isolation').value,
+  };
+  cfg.model = {
+    ...(cfg.model || {}),
+    provider: $('model-provider').value,
+    model: $('model-name').value.trim(),
+  };
+
+  document.querySelectorAll('[data-secret]').forEach((input) => {
+    if (input.value) pendingSecrets[input.dataset.secret] = input.value;
+  });
+  return cfg;
+}
+
+function wireSetup() {
+  const cfg = (state.config || {}).config || {};
+  const redraw = () => renderSetup();
+
+  $('add-ep').onclick = () => {
+    const c = harvestSetup();
+    c.entrypoints = [...(c.entrypoints || []), { name: 'preview', url: '', disposable: false }];
+    redraw();
+  };
+  $('add-user').onclick = () => {
+    const c = harvestSetup();
+    const n = (c.test_users || []).length;
+    c.test_users = [...(c.test_users || []),
+      { role: n === 0 ? 'owner' : n === 1 ? 'member' : `role${n}` }];
+    redraw();
+  };
+  document.querySelectorAll('[data-remove-ep]').forEach((b) => {
+    b.onclick = () => { harvestSetup().entrypoints.splice(Number(b.dataset.removeEp), 1); redraw(); };
+  });
+  document.querySelectorAll('[data-remove-user]').forEach((b) => {
+    b.onclick = () => { harvestSetup().test_users.splice(Number(b.dataset.removeUser), 1); redraw(); };
+  });
+
+  $('model-provider').onchange = () => { harvestSetup(); redraw(); };
+
+  $('save-setup').onclick = async () => {
+    const c = harvestSetup();
+
+    const patch = {
+      // Ticking the box IS the confirmation; the API refuses without it.
+      entrypoints: (c.entrypoints || [])
+        .filter((e) => e.url)
+        .map((e) => ({ ...e, confirm_disposable: e.disposable })),
+      test_users: (c.test_users || []).filter((u) => u.role),
+      supabase: {
+        url: c.supabase?.url || '',
+        anon_key_var: 'SUPABASE_ANON_KEY',
+        service_key_var: 'SUPABASE_SERVICE_ROLE_KEY',
+        isolation: c.supabase?.isolation || 'scoped_seed',
+      },
+      model: {
+        provider: c.model?.provider,
+        model: c.model?.model || '',
+        api_key_var: keyVarFor(c.model?.provider),
+      },
+    };
+
+    const secrets = { ...pendingSecrets };
+
+    try {
+      $('save-msg').textContent = 'saving…';
+      await api(`/api/repos/${state.repoId}/config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (Object.keys(secrets).length) {
+        await api(`/api/repos/${state.repoId}/secrets`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(secrets),
+        });
+      }
+      pendingSecrets = {};
+      await loadRepo();
+      $('save-msg').textContent = 'saved';
+    } catch (e) {
+      $('save-msg').textContent = '';
+      alert(e.message);
+    }
+  };
+}
+
 function renderAgent() {
   const repo = (state.overview || {}).repo || {};
   $('agent-body').innerHTML = `
@@ -730,15 +961,16 @@ async function loadRepos() {
 async function loadRepo() {
   if (!state.repoId) { render(activeTab()); return; }
   const base = `/api/repos/${state.repoId}`;
-  const [overview, gaps, scenarios, surfaces, runs, jobs] = await Promise.all([
+  const [overview, gaps, scenarios, surfaces, runs, jobs, config] = await Promise.all([
     api(`${base}/overview`).catch(() => ({})),
     api(`${base}/gaps`).catch(() => ({})),
     api(`${base}/scenarios`).catch(() => ({})),
     api(`${base}/surfaces`).catch(() => ({})),
     api(`${base}/runs`).catch(() => ({})),
     api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
+    api(`${base}/config`).catch(() => ({})),
   ]);
-  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs });
+  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config });
   render(activeTab());
 }
 

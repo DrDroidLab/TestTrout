@@ -15,7 +15,7 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from pathlib import Path
 
-from testtrout.analysis import criticality, externals, supabase_ops
+from testtrout.analysis import criticality, externals, requirements, supabase_ops
 from testtrout.analysis.detect import ProjectContext, detect_project
 from testtrout.analysis.frameworks.base import FrameworkAdapter
 from testtrout.analysis.ids import IdAllocator
@@ -145,6 +145,7 @@ def scan(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> ScanResult:
         result.policies = policies
         _warn_unprotected_tables(result)
 
+    result.requirements = requirements.discover(result, files)
     _attribute_reachability(result, files, context, max_depth)
     return criticality.apply(result)
 

@@ -13,7 +13,8 @@ trout init --yes --url <URL> --no-disposable --role owner --role member
 trout doctor --json                # verify; exits non-zero and says what is missing
 trout probe --role owner --json    # needs: playwright install chromium
 trout intent --draft --json        # or --describe "..." / --from FILE
-trout gaps --json                  # deterministic; no model, no key
+trout plan --json               # what is possible, and what is missing
+trout gaps --json               # deterministic; no model, no key
 trout propose --json -n 5          # drafts only — never auto-approve
 trout scenarios --json
 trout approve <id>                 # only when the user has chosen

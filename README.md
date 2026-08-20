@@ -52,9 +52,22 @@ trout link ~/code/my-app          # a folder you already have
 trout link --github owner/name    # cloned with your GitHub token
 ```
 
-Linking a local folder never modifies it. A scan starts automatically, and from there
-the interface walks you through connecting a deployment, reviewing what is untested,
-approving tests, and running them.
+Linking a local folder never modifies it. A scan starts automatically, and the **Setup**
+tab has every setting: deployments, Supabase, test accounts, model provider.
+
+Two things make that safe and useful:
+
+**It tells you what credentials your app needs**, discovered by reading your source —
+which variables it reaches for, what each is likely for, and the line it appears on.
+No re-deriving something the code already states.
+
+**A partial set gives a partial suite.** With only a URL you can probe and run API
+tests; add an anon key and a second account and authorization tests become possible.
+Each blocked capability names the single next thing it needs, never "configure it
+properly".
+
+Secret values are written to a gitignored `.env`; committed configuration holds only
+`env:NAME` references, and a literal secret typed into a config field is rejected.
 
 ## Or stay in your coding agent
 
@@ -213,6 +226,7 @@ stacks are an adapter away: see [docs/adapters.md](docs/adapters.md).
 | ✅ | MCP server, CLI, and a local app with storage and a worker |
 | ✅ | Change-based test selection, base-branch differential |
 | ✅ | Multi-repository: link local folders or clone with a GitHub token |
+| ✅ | Full configuration from the interface or the CLI, with credential discovery |
 | 🔜 | GitHub pull-request checks |
 | 🔜 | Observed coverage index (today's selection uses declared coverage) |
 

@@ -7,6 +7,26 @@ All notable changes to this project are documented here. This project follows
 
 ### Added
 
+- **Credential discovery.** The scan now reports which environment variables the
+  application reads, what each appears to be for, and where it is referenced —
+  rather than asking a developer to re-derive something the code states plainly.
+  Framework prefixes (`VITE_`, `NEXT_PUBLIC_`, `REACT_APP_`) are normalised, so
+  one rule matches every spelling of the same requirement.
+- **Graceful degradation.** `trout plan` and the Setup tab report each capability
+  as ready or blocked, and every blocked one names a single concrete missing
+  thing. A URL alone already unlocks probing and API tests.
+- **Full configuration from the interface.** Deployments, Supabase, test
+  accounts, model provider, and isolation are all editable in the Setup tab.
+- Secret values are written to a gitignored `.env`, which is created if needed;
+  committed configuration holds only `env:NAME` references, and a literal secret
+  typed into a config field is rejected rather than saved.
+- Making a deployment writable requires explicit confirmation — the one setting
+  that can destroy real data is never incidental.
+- `trout plan` and `trout config` give the CLI parity with everything the
+  interface can do.
+- Linking now behaves identically from the CLI and the API; they had drifted, and
+  the symptom was a settings page reporting "0 policies" for an unscanned repo.
+
 - **`trout up` — the application.** Storage, a background worker, and the web
   interface, started with one command. SQLite under `~/.testtrout` and an
   in-process worker: no Docker, no daemon, nothing to install first.

@@ -188,5 +188,72 @@ def test_no_endpoint_can_make_a_deployment_writable(client: TestClient):
         "/api/repos",
         "/api/repos/{repo_id}/jobs",
         "/api/repos/{repo_id}/scenarios/{scenario_id}/status",
+        "/api/repos/{repo_id}/secrets",
         "/api/jobs/{job_id}/cancel",
     }
+
+
+def test_making_a_deployment_writable_requires_explicit_confirmation(client: TestClient):
+    """The one setting that can destroy real data must never be incidental."""
+    unconfirmed = client.put(
+        "/api/repos/1/config",
+        json={"entrypoints": [{"name": "prod", "url": "https://x.dev", "disposable": True}]},
+    )
+    assert unconfirmed.status_code == 400
+    assert "Confirm that explicitly" in unconfirmed.json()["detail"]
+
+    confirmed = client.put(
+        "/api/repos/1/config",
+        json={
+            "entrypoints": [
+                {
+                    "name": "prod",
+                    "url": "https://x.dev",
+                    "disposable": True,
+                    "confirm_disposable": True,
+                }
+            ]
+        },
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["config"]["entrypoints"][0]["disposable"] is True
+
+
+def test_configuration_never_accepts_a_literal_secret(client: TestClient):
+    """A password typed into a config field must be refused, not committed."""
+    response = client.put(
+        "/api/repos/1/config",
+        json={"supabase": {"anon_key_var": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret"}},
+    )
+    assert response.status_code == 400
+    assert "environment variable name" in response.json()["detail"]
+
+
+def test_secrets_go_to_a_gitignored_env_file(client: TestClient, project: Path):
+    """Writing credentials into a repo without ignoring them would be harmful."""
+    response = client.post("/api/repos/1/secrets", json={"SUPABASE_ANON_KEY": "anon-value-here"})
+    assert response.status_code == 200
+    assert response.json()["written"] == ["SUPABASE_ANON_KEY"]
+
+    env = (project / ".env").read_text()
+    assert "SUPABASE_ANON_KEY=anon-value-here" in env
+    assert ".env" in (project / ".gitignore").read_text()
+
+    # Values are never read back out.
+    view = client.get("/api/repos/1/config").json()
+    assert view["env_present"].get("SUPABASE_ANON_KEY") is True
+    assert "anon-value-here" not in str(view)
+
+
+def test_readiness_degrades_rather_than_refusing(client: TestClient):
+    """A partial set of credentials gives a partial suite, not an error."""
+    client.put(
+        "/api/repos/1/config",
+        json={"entrypoints": [{"name": "p", "url": "https://x.dev"}]},
+    )
+    view = client.get("/api/repos/1/config").json()
+    by_name = {r["capability"]: r for r in view["readiness"]}
+
+    assert by_name["api_tests"]["ready"] is True
+    assert by_name["authorization_tests"]["ready"] is False
+    assert by_name["authorization_tests"]["next_step"]

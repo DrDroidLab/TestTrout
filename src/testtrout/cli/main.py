@@ -1179,7 +1179,11 @@ def up(
 
     if link is not None:
         record = registry.link_local(link)
-        render.console.print(f"[green]linked[/green] {record.name} [dim]{record.path}[/dim]")
+        queued = registry.queue_initial_scan(record)
+        render.console.print(
+            f"[green]linked[/green] {record.name} [dim]{record.path}[/dim]"
+            + (" [dim](scanning…)[/dim]" if queued else "")
+        )
 
     worker = Worker(database)
     worker.start()
@@ -1263,9 +1267,12 @@ def link(
         render.error_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
 
+    registry.queue_initial_scan(record)
     render.console.print(f"[green]linked[/green] {record.name}")
     render.console.print(f"  [dim]{record.path}[/dim]")
-    render.console.print("[dim]next: `trout up` to open the interface, or `trout scan`[/dim]")
+    render.console.print(
+        "[dim]a scan is queued — run `trout up` to process it, or `trout scan` now[/dim]"
+    )
 
 
 @app.command(name="github-login")
@@ -1352,6 +1359,78 @@ def worker() -> None:
         instance.loop()
     except KeyboardInterrupt:
         render.console.print("stopped")
+
+
+@app.command()
+def plan(path: PathArg = None, as_json: JsonOpt = False) -> None:
+    """Show what can be tested now, and what each missing piece would unlock.
+
+    A partial set of credentials gives a partial suite, not an error. This says
+    exactly which one thing to supply next.
+    """
+    from testtrout.app import settings
+
+    paths = _resolve(path)
+    data = settings.view(paths)
+
+    if as_json:
+        typer.echo(json.dumps(data.as_dict(), indent=2))
+        return
+    render.plan(data)
+
+
+@app.command(name="config")
+def config_command(
+    path: PathArg = None,
+    as_json: JsonOpt = False,
+    set_secret: Annotated[
+        list[str] | None,
+        typer.Option("--set-secret", help="NAME=value, written to .env. Repeatable."),
+    ] = None,
+    provider: Annotated[str | None, typer.Option("--provider")] = None,
+    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    isolation: Annotated[
+        str | None, typer.Option("--isolation", help="local_reset | scoped_seed | branch")
+    ] = None,
+) -> None:
+    """Show or change repository configuration.
+
+    The same settings the interface edits. Secrets go to the gitignored .env;
+    configuration only ever stores their names.
+    """
+    from testtrout.app import settings
+
+    paths = _resolve(path)
+    patch: dict[str, object] = {}
+    if provider or model_name:
+        patch["model"] = {k: v for k, v in (("provider", provider), ("model", model_name)) if v}
+    if isolation:
+        patch["supabase"] = {"isolation": isolation}
+
+    try:
+        if patch:
+            settings.apply(paths, patch)
+        if set_secret:
+            pairs = {}
+            for item in set_secret:
+                if "=" not in item:
+                    render.error_console.print(f"[red]expected NAME=value, got {item!r}[/red]")
+                    raise typer.Exit(2)
+                name, value = item.split("=", 1)
+                pairs[name.strip()] = value
+            written = settings.set_secrets(paths, pairs)
+            render.console.print(
+                f"[green]wrote {len(written)} value(s) to .env[/green] [dim]{', '.join(written)}[/dim]"
+            )
+    except settings.SettingsError as exc:
+        render.error_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    data = settings.view(paths)
+    if as_json:
+        typer.echo(json.dumps(data.as_dict(), indent=2))
+        return
+    render.config_view(data)
 
 
 def main() -> None:

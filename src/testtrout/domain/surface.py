@@ -22,6 +22,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from testtrout.domain.location import SourceLocation as SourceLocation
+from testtrout.domain.requirements import Requirement
+
 
 class Criticality(StrEnum):
     """How much it matters that a surface keeps working.
@@ -81,23 +84,6 @@ class SurfaceKind(StrEnum):
     EDGE_FUNCTION = "edge_function"
     POLICY = "policy"
     EXTERNAL = "external"
-
-
-class SourceLocation(BaseModel):
-    """A file and line range, used to trace every finding back to real code."""
-
-    model_config = ConfigDict(frozen=True)
-
-    file: str = Field(description="Repository-relative POSIX path.")
-    line: int = Field(ge=1, description="1-indexed start line.")
-    end_line: int | None = Field(default=None, ge=1)
-    symbol: str | None = Field(
-        default=None, description="Enclosing function or component name, when resolvable."
-    )
-
-    def __str__(self) -> str:
-        """Render as ``file:line``, which most terminals make clickable."""
-        return f"{self.file}:{self.line}"
 
 
 class _BaseSurface(BaseModel):
@@ -355,6 +341,10 @@ class ScanResult(BaseModel):
     policies: list[Policy] = Field(default_factory=list)
     externals: list[ExternalDependency] = Field(default_factory=list)
     tables: list[Table] = Field(default_factory=list)
+    requirements: list[Requirement] = Field(
+        default_factory=list,
+        description="Credentials this deployment needs, discovered from its own source.",
+    )
     warnings: list[ScanWarning] = Field(default_factory=list)
 
     def all_surfaces(self) -> list[Surface]:

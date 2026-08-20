@@ -100,6 +100,23 @@ class RepoRegistry:
             connection.execute("DELETE FROM repos WHERE id = ?", (repo_id,))
         return True
 
+    def queue_initial_scan(self, record: RepoRecord) -> bool:
+        """Scan a freshly linked repository, unless it has been scanned already.
+
+        Lives here rather than in each caller so that linking from the CLI and
+        linking from the interface leave identical state. They drifted once, and
+        the symptom was a settings page confidently reporting "0 policies" for a
+        repository nobody had scanned.
+        """
+        from testtrout.app.queue import JobQueue
+
+        if record.id is None or not record.exists:
+            return False
+        if QaPaths(root=record.root).surfaces.is_file():
+            return False
+        JobQueue(self.database).enqueue(record.id, "scan")
+        return True
+
     # ------------------------------------------------------------ querying
 
     def all(self) -> list[RepoRecord]:

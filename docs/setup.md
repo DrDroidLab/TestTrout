@@ -9,6 +9,45 @@ what is missing — call it whenever a step fails, before trying anything else.
 
 ---
 
+## Everything is configurable from the interface
+
+```bash
+pip install testtrout
+trout up
+```
+
+Link a repository, then open **Setup**. Every setting lives there:
+
+| Section | What it does |
+|---|---|
+| **What you can test right now** | Each capability, ready or blocked, with the one thing it needs |
+| **Credentials this app needs** | Discovered by reading your source — the variables your app actually uses, and where |
+| **Deployments** | URLs, and the disposable tick that decides whether writes are allowed |
+| **Supabase** | Project URL, keys, database isolation |
+| **Test accounts** | Roles, emails, passwords |
+| **Model provider** | Anthropic, OpenAI, or Kimi, and its key |
+
+**Secret values never reach `.trout/config.yaml`.** The interface writes them to
+a gitignored `.env` and stores only `env:NAME` references in the committed file.
+Typing a literal secret into a configuration field is rejected, not saved.
+
+**A partial set of credentials gives a partial suite, not an error.** With only
+a URL you can already probe and run API tests; adding an anon key and a second
+account unlocks authorization tests. Setup always names the single next thing.
+
+### Or from the terminal
+
+The CLI does everything the interface does:
+
+```bash
+trout plan                                   # what is possible, what is missing
+trout config                                 # show current settings
+trout config --provider kimi --isolation local_reset
+trout config --set-secret SUPABASE_ANON_KEY=... --set-secret TROUT_OWNER_PASSWORD=...
+```
+
+---
+
 ## The short way
 
 ```bash
@@ -478,6 +517,8 @@ model:
 | `trout link` | — | Link a local folder or clone from GitHub |
 | `trout repos` | — | List linked repositories |
 | `trout worker` | — | Standalone worker |
+| `trout plan` | — | What is possible, and what is missing |
+| `trout config` | — | Show or change settings; write secrets to .env |
 | `trout web` | — | `trout up` scoped to one repository |
 | `trout mcp` | — | MCP server for coding agents |
 

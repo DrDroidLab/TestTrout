@@ -142,10 +142,8 @@ def create_app(database: Database | None = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        # A freshly linked repository is useless until it is scanned, so start
-        # that immediately rather than making the user press a second button.
-        if record.id is not None and not paths_for(record.id).surfaces.is_file():
-            queue.enqueue(record.id, "scan")
+        # A freshly linked repository is useless until it is scanned.
+        registry.queue_initial_scan(record)
         return record.model_dump(mode="json")
 
     @app.delete("/api/repos/{repo_id}")
@@ -336,6 +334,47 @@ def create_app(database: Database | None = None) -> FastAPI:
         scenario.status = ScenarioStatus(target)
         save(paths.scenarios, scenario)
         return scenario.model_dump(mode="json", exclude_none=True)
+
+    # ------------------------------------------------------------ settings
+
+    @app.get("/api/repos/{repo_id}/config")
+    def get_config(repo_id: int) -> dict[str, Any]:
+        """Configuration, what it still needs, and what it can already do."""
+        from testtrout.app import settings
+
+        return settings.view(paths_for(repo_id)).as_dict()
+
+    @app.put("/api/repos/{repo_id}/config")
+    def put_config(repo_id: int, patch: dict[str, Any]) -> dict[str, Any]:
+        """Apply a partial configuration change.
+
+        Only the sections present are touched, so editing deployments cannot
+        silently reset the model provider.
+        """
+        from testtrout.app import settings
+
+        paths = paths_for(repo_id)
+        try:
+            settings.apply(paths, patch)
+        except settings.SettingsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return settings.view(paths).as_dict()
+
+    @app.post("/api/repos/{repo_id}/secrets")
+    def put_secrets(repo_id: int, payload: dict[str, str]) -> dict[str, Any]:
+        """Write credential values into the repository's gitignored .env.
+
+        Values are never stored in configuration and never read back out; the
+        response reports names only.
+        """
+        from testtrout.app import settings
+
+        paths = paths_for(repo_id)
+        try:
+            written = settings.set_secrets(paths, payload)
+        except settings.SettingsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"written": written} | settings.view(paths).as_dict()
 
     # ---------------------------------------------------------------- jobs
 
