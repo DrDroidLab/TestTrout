@@ -194,6 +194,8 @@ def create_app(database: Database | None = None) -> FastAPI:
         return {
             "repo": record.model_dump(mode="json") if record else None,
             "scanned": scan is not None,
+            "scan_stale": (scan is not None and scan.tool_version != __version__),
+            "scan_empty": scan is not None and sum(scan.counts.values()) == 0,
             "project": scan.project.model_dump(mode="json") if scan else None,
             "counts": scan.counts if scan else {},
             "coverage": (

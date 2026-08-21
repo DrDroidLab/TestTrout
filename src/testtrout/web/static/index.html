@@ -472,6 +472,23 @@ function renderOverview() {
     $('overview-config').innerHTML = '';
     return;
   }
+  if (o.scan_empty) {
+    // Rendering zeros silently is how a stale or failed scan looks like a
+    // working tool with nothing to say.
+    $('cards').innerHTML = '';
+    $('overview-config').innerHTML = '';
+    $('overview-notes').innerHTML = `<div class="warnbox">
+      <strong>This scan found nothing.</strong>
+      <div class="note">${o.scan_stale
+        ? 'It was produced by an older version of TestTrout. Press <strong>Scan</strong> to run it again.'
+        : 'Either this is not a supported stack, or the app lives somewhere the scan did not look. ' +
+          'Supported: React + Vite, or Next.js App Router, in TypeScript.'}</div>
+      <div class="note">Detected: <code>${esc(o.project?.framework || 'unknown')}</code>
+        ${(o.project?.detected_from || []).length
+          ? '— ' + esc(o.project.detected_from.join('; ')) : '— no evidence found'}</div>
+    </div>`;
+    return;
+  }
 
   const c = o.coverage || {};
   const s = o.scenarios || {};

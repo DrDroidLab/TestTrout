@@ -7,6 +7,15 @@ All notable changes to this project are documented here. This project follows
 
 ### Fixed
 
+- **A stale scan silently shadowed a fixed scanner.** Linking skipped scanning
+  when a scan file already existed, so a result written by an older build — one
+  that could not yet read a monorepo — kept being served, and the interface
+  faithfully displayed its zeros. Linking now always scans; it takes well under
+  a second, and the optimisation bought nothing.
+- Scans record the build that produced them, and the interface says "this scan
+  found nothing" with the detected framework and the evidence for it, rather
+  than rendering zeros as though they were a result.
+
 - **Monorepos scanned to nothing.** A repository with no root `package.json` —
   `frontend/` beside `backend/`, a very common shape — reported an unknown
   framework and zero screens. The scan now finds an app in a well-known

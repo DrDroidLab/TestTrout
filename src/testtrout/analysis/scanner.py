@@ -15,6 +15,7 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from pathlib import Path
 
+from testtrout import __version__
 from testtrout.analysis import (
     criticality,
     externals,
@@ -126,7 +127,7 @@ def scan(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> ScanResult:
     files, warnings = _parse_all(context)
     allocator = IdAllocator()
 
-    result = ScanResult(project=context.info, warnings=warnings)
+    result = ScanResult(tool_version=__version__, project=context.info, warnings=warnings)
 
     adapter = _select_adapter(context)
     if adapter is None:

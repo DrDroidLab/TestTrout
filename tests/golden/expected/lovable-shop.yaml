@@ -1,4 +1,5 @@
 schema_version: 1
+tool_version: 0.1.0.dev0
 project:
   root: <root>
   framework: vite-react

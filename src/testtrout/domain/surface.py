@@ -332,6 +332,13 @@ class ScanResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: int = 1
+    tool_version: str = Field(
+        default="",
+        description=(
+            "The build that produced this scan. A result from an older build can be "
+            "wrong in ways nothing else reveals — it simply reports less."
+        ),
+    )
     project: ProjectInfo
     screens: list[Screen] = Field(default_factory=list)
     data_operations: list[DataOperation] = Field(default_factory=list)

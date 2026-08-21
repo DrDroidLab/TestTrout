@@ -101,7 +101,7 @@ class RepoRegistry:
         return True
 
     def queue_initial_scan(self, record: RepoRecord) -> bool:
-        """Scan a freshly linked repository, unless it has been scanned already.
+        """Scan a freshly linked repository.
 
         Lives here rather than in each caller so that linking from the CLI and
         linking from the interface leave identical state. They drifted once, and
@@ -112,8 +112,10 @@ class RepoRegistry:
 
         if record.id is None or not record.exists:
             return False
-        if QaPaths(root=record.root).surfaces.is_file():
-            return False
+        # Always scan, even when a scan file already exists. Skipping to save
+        # work meant a result written by an older build — one that could not yet
+        # read this repository's layout — silently shadowed a fixed scanner, and
+        # the interface faithfully displayed its zeros.
         JobQueue(self.database).enqueue(record.id, "scan")
         return True
 
