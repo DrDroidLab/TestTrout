@@ -95,6 +95,28 @@ def run(
         record.finished_at = datetime.now(UTC).isoformat()
         return record
 
+    # Refuse anything that could change state on a deployment whose data is not
+    # disposable. The prober's network guard never covered generated tests: a
+    # suite run by hand would happily POST to production.
+    if not entrypoint.writable:
+        unsafe = [s for s in generated if s.mutating]
+        if unsafe:
+            generated = [s for s in generated if not s.mutating]
+            record.notes.append(
+                f"{len(unsafe)} test(s) that change data were not run: {entrypoint.name!r} "
+                "is not marked disposable. Mark it disposable only if its data can be "
+                "destroyed, or point at a preview deployment."
+            )
+            record.results.extend(
+                ScenarioResult(
+                    scenario_id=s.id,
+                    title=s.title,
+                    classification=Classification.SKIPPED,
+                    message=f"skipped — would change data on {entrypoint.name}",
+                )
+                for s in unsafe
+            )
+
     chain = toolchain.detect(root)
     kinds_needed = {
         "browser" if s.emitted_to and "browser/" in s.emitted_to else "node" for s in generated
@@ -102,20 +124,20 @@ def run(
     unrunnable = [k for k in kinds_needed if not chain.can_run(k)]
     if unrunnable:
         record.notes.extend(chain.problems)
-        record.results = [
+        record.results.extend(
             _inconclusive(s, "the project's test toolchain is not installed") for s in generated
-        ]
+        )
         record.finished_at = datetime.now(UTC).isoformat()
         return record
 
-    env = environment.build(config, entrypoint)
+    env = environment.build(config, entrypoint, scenarios=generated)
     if not env.complete:
         record.notes.append(
             "Credentials are missing, so nothing was executed. A run that fails for this "
             "reason says nothing about the product."
         )
         record.notes.extend(f"missing: {item}" for item in env.missing)
-        record.results = [_inconclusive(s, "missing credentials") for s in generated]
+        record.results.extend(_inconclusive(s, "missing credentials") for s in generated)
         record.finished_at = datetime.now(UTC).isoformat()
         return record
 
@@ -142,7 +164,7 @@ def run(
             _run_suite(suite, chain, root, report_dir, env.merged(), scenario_id, record)
         )
 
-    record.results = _attach_metadata(results, generated, entrypoint)
+    record.results.extend(_attach_metadata(results, generated, entrypoint))
     record.finished_at = datetime.now(UTC).isoformat()
     return record
 

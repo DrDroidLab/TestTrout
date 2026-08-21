@@ -5,6 +5,39 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed — a simpler shape
+
+Eleven concepts became four. A project is a repository and a deployment; the
+tool finds **areas that need testing**, writes **tests**, runs them, and asks
+**questions** when it cannot work something out alone.
+
+- **Questions are now first-class.** Everything the tool could not determine —
+  unresolved code, blocked capabilities, a test it could not prove, an
+  ambiguous failure — used to arrive through four separate surfaces and was
+  easy to miss. It is now one queue, sorted with the blocking ones first, where
+  every entry says what answering it unlocks. Answers are committed alongside
+  the tests, because an answer is a decision about the product.
+- **Build replaces propose/approve/generate.** It drafts tests *and proves them
+  against your deployment*, keeping only what passes. Validation replaces
+  approval as the gate: asking someone to approve a test nobody has run is
+  asking them to guess. What is left for a person is the part only they can do.
+- A test that fails during building is held back with the failure attached as a
+  question, rather than added to the suite or silently dropped.
+- Three actions instead of seven: **Scan**, **Build tests**, **Run tests**.
+
+### Fixed
+
+- **Generated tests could POST to production.** The disposable guard only ever
+  covered the prober's browser traffic; nothing stopped a generated endpoint
+  test firing `POST /auth/signup` at a live deployment, whether run by TestTrout
+  or by `npx vitest`. Mutating tests are now refused unless a deployment is
+  explicitly marked disposable, checked both in the runner and inside the
+  generated code itself.
+- Run results were replaced rather than appended, so a refused test vanished
+  from the record that was supposed to explain why it did not run.
+- Supabase credentials were still demanded before any run, months after they
+  stopped being needed. Accounts are now required only when a test signs in.
+
 ### Fixed
 
 - **A stale scan silently shadowed a fixed scanner.** Linking skipped scanning

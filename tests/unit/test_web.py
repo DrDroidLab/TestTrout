@@ -189,6 +189,7 @@ def test_no_endpoint_can_make_a_deployment_writable(client: TestClient):
         "/api/repos/{repo_id}/jobs",
         "/api/repos/{repo_id}/scenarios/{scenario_id}/status",
         "/api/repos/{repo_id}/secrets",
+        "/api/repos/{repo_id}/questions/{question_id}",
         "/api/jobs/{job_id}/cancel",
     }
 

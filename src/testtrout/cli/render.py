@@ -16,6 +16,7 @@ from testtrout.app.settings import ConfigView
 from testtrout.domain.gap import GapMap
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import Divergence, ProbeResult
+from testtrout.domain.question import QuestionLog
 from testtrout.domain.run import RunRecord, RunStatus
 from testtrout.domain.scenario import ScenarioIndex
 from testtrout.domain.surface import Criticality, ScanResult
@@ -553,3 +554,28 @@ def config_view(view: ConfigView) -> None:
         for name, present in sorted(view.env_present.items()):
             mark = "[green]set[/green]" if present else "[red]missing[/red]"
             console.print(f"  {mark}  {name}")
+
+
+def questions(log: QuestionLog) -> None:
+    """Print the open question queue."""
+    open_items = log.open_questions()
+    if not open_items:
+        console.print()
+        console.print("[green]nothing to answer[/green] [dim]— run a scan or build first[/dim]")
+        return
+
+    console.print()
+    console.print(f"[bold]{len(open_items)} question(s)[/bold] [dim]most consequential first[/dim]")
+    for question in open_items:
+        marker = "[yellow]![/yellow]" if question.kind.blocks_work else "[dim]·[/dim]"
+        console.print()
+        console.print(f"{marker} [dim]{question.kind.label}[/dim]  {question.text}")
+        console.print(f"   [dim]{question.id}[/dim]")
+        if question.context:
+            console.print(f"   [dim]{question.context}[/dim]")
+        if question.unlocks:
+            console.print(f"   [cyan]unlocks:[/cyan] {question.unlocks}")
+        for choice in question.choices:
+            console.print(f"     [dim]·[/dim] {choice}")
+    console.print()
+    console.print('[dim]answer with: trout questions --answer "<id>=<your answer>"[/dim]')

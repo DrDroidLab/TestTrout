@@ -37,10 +37,11 @@ from testtrout.domain.config import Config
 from testtrout.domain.gap import GapMap
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import ProbeResult
+from testtrout.domain.question import QuestionLog
 from testtrout.domain.run import RunRecord
 from testtrout.domain.scenario import ScenarioIndex, ScenarioStatus
 from testtrout.domain.surface import ScanResult
-from testtrout.store import QaPaths, read_model
+from testtrout.store import QaPaths, read_model, write_model
 
 STATIC = Path(__file__).parent / "static"
 
@@ -237,6 +238,7 @@ def create_app(database: Database | None = None) -> FastAPI:
             ),
             "history": [h.model_dump(mode="json") for h in history],
             "authorization_possible": len(config.test_users) >= 2,
+            "open_questions": len(_questions(paths).open_questions()),
         }
 
     @app.get("/api/repos/{repo_id}/surfaces")
@@ -336,6 +338,47 @@ def create_app(database: Database | None = None) -> FastAPI:
         scenario.status = ScenarioStatus(target)
         save(paths.scenarios, scenario)
         return scenario.model_dump(mode="json", exclude_none=True)
+
+    # ----------------------------------------------------------- questions
+
+    def _questions(paths: QaPaths) -> QuestionLog:
+        return (
+            read_model(paths.questions, QuestionLog) if paths.questions.is_file() else QuestionLog()
+        )
+
+    @app.get("/api/repos/{repo_id}/questions")
+    def questions(repo_id: int) -> dict[str, Any]:
+        """What the tool needs answered, most consequential first."""
+        log = _questions(paths_for(repo_id))
+        return {
+            "counts": log.counts,
+            "open": [
+                q.model_dump(mode="json") | {"label": q.kind.label, "blocks": q.kind.blocks_work}
+                for q in log.open_questions()
+            ],
+            "answered": [q.model_dump(mode="json") for q in log.questions if not q.open],
+        }
+
+    @app.post("/api/repos/{repo_id}/questions/{question_id}")
+    def answer_question(repo_id: int, question_id: str, payload: dict[str, str]) -> dict[str, Any]:
+        """Record an answer, or dismiss a question as not worth answering."""
+        paths = paths_for(repo_id)
+        log = _questions(paths)
+        question = log.get(question_id)
+        if question is None:
+            raise HTTPException(status_code=404, detail=f"no question {question_id!r}")
+
+        if payload.get("dismiss"):
+            question.dismiss()
+        else:
+            answer = (payload.get("answer") or "").strip()
+            if not answer:
+                raise HTTPException(status_code=400, detail="an answer is required")
+            question.resolve(answer)
+
+        paths.ensure()
+        write_model(paths.questions, log)
+        return question.model_dump(mode="json")
 
     # ------------------------------------------------------------ settings
 

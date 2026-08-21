@@ -181,24 +181,26 @@
 
 <nav>
   <button data-tab="overview" class="active">Overview</button>
-  <button data-tab="setup">Setup</button>
-  <button data-tab="gaps">Gaps</button>
-  <button data-tab="scenarios">Scenarios</button>
-  <button data-tab="surfaces">Surfaces</button>
+  <button data-tab="questions">Questions <span id="q-badge"></span></button>
+  <button data-tab="scenarios">Tests</button>
+  <button data-tab="gaps">Needs testing</button>
   <button data-tab="runs">Runs</button>
+  <button data-tab="setup">Setup</button>
   <button data-tab="jobs">Activity</button>
-  <button data-tab="agent">Connect an agent</button>
+  <button data-tab="agent">Agent</button>
 </nav>
 
 <main>
   <section id="overview" class="active">
     <div class="toolbar" id="actions">
-      <button class="action primary" data-act="scan">Scan</button>
-      <span class="muted" style="font-size:12.5px">analyse the code, check the deployment, list what is untested</span>
+      <button class="action" data-act="scan">Scan</button>
+      <button class="action primary" data-act="build">Build tests</button>
+      <button class="action primary" data-act="run">Run tests</button>
       <span class="spacer" style="flex:1"></span>
-      <button class="action" data-act="propose">Draft tests</button>
-      <button class="action primary" data-act="run">Run</button>
-      <button class="action" data-act="certify">Certify</button>
+      <span class="muted" style="font-size:12.5px">
+        Scan finds what needs testing · Build writes tests and proves them against your
+        deployment · Run checks nothing broke
+      </span>
     </div>
     <div class="grid" id="cards"></div>
     <div id="overview-notes"></div>
@@ -209,7 +211,7 @@
     <div class="toolbar">
       <span class="muted">Ranked by what to write first. Every rank is the sum of named contributions.</span>
       <span class="spacer" style="flex:1"></span>
-      <button class="action" data-act="propose">Draft top 5</button>
+      <button class="action primary" data-act="build">Build tests for these</button>
     </div>
     <div id="gaps-body"></div>
   </section>
@@ -218,13 +220,14 @@
     <div class="toolbar">
       <span class="muted">Approve what you want in the suite. Nothing is approved for you.</span>
       <span class="spacer" style="flex:1"></span>
-      <button class="action" data-act="generate">Generate approved</button>
+      <button class="action" data-act="run">Run tests</button>
     </div>
     <div id="scenarios-body"></div>
   </section>
 
+  <section id="questions"><div id="questions-body"></div></section>
   <section id="setup"><div id="setup-body"></div></section>
-  <section id="surfaces"><div id="surfaces-body"></div></section>
+  
   <section id="runs"><div id="runs-body"></div></section>
   <section id="jobs"><div id="jobs-body"></div></section>
   <section id="agent"><div id="agent-body"></div></section>
@@ -444,7 +447,8 @@ function follow(jobId) {
 // --------------------------------------------------------------- render
 
 function render(tab) {
-  ({ overview: renderOverview, setup: renderSetup, gaps: renderGaps, scenarios: renderScenarios,
+  ({ overview: renderOverview, setup: renderSetup, gaps: renderGaps,
+      questions: renderQuestions, scenarios: renderScenarios,
       surfaces: renderSurfaces, runs: renderRuns, jobs: renderJobs,
       agent: renderAgent }[tab] || (() => {}))();
 }
@@ -533,6 +537,10 @@ function renderOverview() {
         `background:${colours[h.status] || 'var(--border)'}" title="${esc(h.run_id)} ${esc(h.status)}"></i>`).join('')}</div>
       <div class="sub">${hist.length} run(s) recorded</div>
     </div>`;
+
+  const openCount = o.open_questions || 0;
+  $('q-badge').innerHTML = openCount
+    ? `<span class="pill warning" style="margin-left:4px">${openCount}</span>` : '';
 
   $('overview-notes').innerHTML = (o.notes || []).length
     ? `<div class="warnbox"><strong>What would make this better</strong>` +
@@ -938,6 +946,66 @@ function wireSetup() {
   };
 }
 
+function renderQuestions() {
+  const d = state.questions || {};
+  const open = d.open || [];
+  if (!open.length) {
+    $('questions-body').innerHTML = (d.answered || []).length
+      ? '<div class="empty">Nothing outstanding. Everything TestTrout could not work out has been answered.</div>'
+      : '<div class="empty">No questions yet. Press <strong>Scan</strong> or <strong>Build tests</strong>.</div>';
+    return;
+  }
+
+  $('questions-body').innerHTML = `
+    <p class="muted">Things TestTrout could not work out on its own. Each takes a moment,
+       and each usually unblocks several tests.
+       ${open.filter((q) => q.blocks).length
+         ? `<strong>${open.filter((q) => q.blocks).length}</strong> are stopping tests from being
+            written at all — those first.` : ''}</p>
+    ${open.map((q, i) => `
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;gap:8px;align-items:baseline">
+          <span class="pill ${q.blocks ? 'warning' : 'medium'}">${esc(q.label || q.kind)}</span>
+          <strong style="flex:1">${esc(q.text)}</strong>
+        </div>
+        ${q.context ? `<div class="muted" style="font-size:12.5px;margin-top:6px">${esc(q.context)}</div>` : ''}
+        ${q.unlocks ? `<div style="font-size:12.5px;margin-top:4px;color:var(--accent)">unlocks: ${esc(q.unlocks)}</div>` : ''}
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          ${(q.choices || []).map((c) =>
+            `<button class="action" data-choice="${esc(q.id)}" data-text="${esc(c)}">${esc(c)}</button>`).join('')}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <input type="text" id="ans-${i}" placeholder="your answer"
+            style="flex:1;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
+          <button class="action primary" data-answer="${esc(q.id)}" data-input="ans-${i}">Answer</button>
+          <button class="action" data-dismiss="${esc(q.id)}">Not relevant</button>
+        </div>
+      </div>`).join('')}`;
+
+  document.querySelectorAll('[data-choice]').forEach((b) => {
+    b.onclick = () => submitAnswer(b.dataset.choice, b.dataset.text);
+  });
+  document.querySelectorAll('[data-answer]').forEach((b) => {
+    b.onclick = () => {
+      const value = $(b.dataset.input).value.trim();
+      if (value) submitAnswer(b.dataset.answer, value);
+    };
+  });
+  document.querySelectorAll('[data-dismiss]').forEach((b) => {
+    b.onclick = () => submitAnswer(b.dataset.dismiss, null, true);
+  });
+}
+
+async function submitAnswer(id, answer, dismiss) {
+  try {
+    await api(`/api/repos/${state.repoId}/questions/${encodeURIComponent(id)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dismiss ? { dismiss: '1' } : { answer }),
+    });
+    await loadRepo();
+  } catch (e) { alert(e.message); }
+}
+
 function renderAgent() {
   const repo = (state.overview || {}).repo || {};
   $('agent-body').innerHTML = `
@@ -998,7 +1066,7 @@ async function loadRepos() {
 async function loadRepo() {
   if (!state.repoId) { render(activeTab()); return; }
   const base = `/api/repos/${state.repoId}`;
-  const [overview, gaps, scenarios, surfaces, runs, jobs, config] = await Promise.all([
+  const [overview, gaps, scenarios, surfaces, runs, jobs, config, questions] = await Promise.all([
     api(`${base}/overview`).catch(() => ({})),
     api(`${base}/gaps`).catch(() => ({})),
     api(`${base}/scenarios`).catch(() => ({})),
@@ -1006,8 +1074,9 @@ async function loadRepo() {
     api(`${base}/runs`).catch(() => ({})),
     api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
     api(`${base}/config`).catch(() => ({})),
+    api(`${base}/questions`).catch(() => ({})),
   ]);
-  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config });
+  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config, questions });
   render(activeTab());
 }
 

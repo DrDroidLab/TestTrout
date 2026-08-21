@@ -1434,6 +1434,56 @@ def config_command(
     render.config_view(data)
 
 
+@app.command()
+def questions(
+    path: PathArg = None,
+    as_json: JsonOpt = False,
+    answer: Annotated[
+        list[str] | None,
+        typer.Option("--answer", help="ID=your answer. Repeatable."),
+    ] = None,
+    dismiss: Annotated[
+        list[str] | None, typer.Option("--dismiss", help="Question id to set aside.")
+    ] = None,
+) -> None:
+    """What TestTrout needs from you to write better tests.
+
+    Everything the tool could not determine, in one list: unresolved code,
+    blocked capabilities, and tests it could not prove. Answering one usually
+    unblocks several tests.
+    """
+    from testtrout.domain.question import QuestionLog
+
+    paths = _resolve(path)
+    log = read_model(paths.questions, QuestionLog) if paths.questions.is_file() else QuestionLog()
+
+    changed = 0
+    for item in answer or []:
+        if "=" not in item:
+            render.error_console.print(f"[red]expected ID=answer, got {item!r}[/red]")
+            raise typer.Exit(2)
+        identifier, text = item.split("=", 1)
+        question = log.get(identifier.strip())
+        if question is None:
+            render.error_console.print(f"[red]no question {identifier.strip()!r}[/red]")
+            raise typer.Exit(2)
+        question.resolve(text.strip())
+        changed += 1
+    for identifier in dismiss or []:
+        question = log.get(identifier.strip())
+        if question is not None:
+            question.dismiss()
+            changed += 1
+    if changed:
+        paths.ensure()
+        write_model(paths.questions, log)
+
+    if as_json:
+        typer.echo(log.model_dump_json(indent=2, exclude_none=True))
+        return
+    render.questions(log)
+
+
 def main() -> None:
     """Console script entry point."""
     try:

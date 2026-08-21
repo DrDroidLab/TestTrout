@@ -188,6 +188,22 @@ class Scenario(BaseModel):
     emitted_to: str | None = Field(default=None, description="Path of the generated test file.")
 
     @property
+    def mutating(self) -> bool:
+        """Whether running this can change state on the deployment.
+
+        The deciding question for whether a test may run against a shared or
+        production URL. Anything that issues a non-idempotent request, or drives
+        the interface into clicking and typing, can leave a mark.
+        """
+        mutating_methods = {"POST", "PUT", "PATCH", "DELETE"}
+        for step in self.when:
+            if step.action in {Action.CLICK, Action.FILL}:
+                return True
+            if (step.target.method or "GET").upper() in mutating_methods:
+                return True
+        return any((a.target.method or "GET").upper() in mutating_methods for a in self.then)
+
+    @property
     def ready_to_approve(self) -> bool:
         """Whether this can be accepted as-is.
 

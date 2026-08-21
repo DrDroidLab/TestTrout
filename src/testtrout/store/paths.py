@@ -88,6 +88,16 @@ class QaPaths:
         return self.dir / "intent.yaml"
 
     @property
+    def questions(self) -> Path:
+        """What the tool needs answered.
+
+        Committed: an answer is a decision about the product, and the next
+        person to read the suite benefits from knowing why a test asserts what
+        it does.
+        """
+        return self.dir / "questions.yaml"
+
+    @property
     def scenarios(self) -> Path:
         """Approved scenario specifications."""
         return self.dir / "scenarios"

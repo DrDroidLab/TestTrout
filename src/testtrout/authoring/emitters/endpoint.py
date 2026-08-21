@@ -35,10 +35,31 @@ function required(name: string): string {
 
 export const baseUrl = (): string => required('TROUT_BASE_URL').replace(/\\/$/, '');
 
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Refuse to change data unless the deployment was declared disposable.
+ *
+ * TestTrout sets TROUT_ALLOW_WRITES only for a deployment whose data can be
+ * destroyed. The check lives here, in the generated test, so that running the
+ * suite by hand — `npx vitest`, or someone's CI — cannot POST to production
+ * either.
+ */
+function guard(method: string): void {
+  if (MUTATING.has(method.toUpperCase()) && process.env.TROUT_ALLOW_WRITES !== '1') {
+    throw new Error(
+      `refusing to ${method} against ${baseUrl()}: this deployment is not marked ` +
+        'disposable. Point TROUT_BASE_URL at a throwaway environment, or set ' +
+        'TROUT_ALLOW_WRITES=1 if its data can really be destroyed.',
+    );
+  }
+}
+
 export async function call(
   path: string,
   init: RequestInit = {},
 ): Promise<{ status: number; body: unknown }> {
+  guard((init.method as string) ?? 'GET');
   const response = await fetch(`${baseUrl()}${path}`, init);
   let body: unknown = null;
   try {

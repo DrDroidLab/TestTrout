@@ -12,6 +12,7 @@ from testtrout.domain.config import (
     Entrypoint,
     ExternalRule,
     IsolationStrategy,
+    Permission,
     SubstitutionConfig,
     SupabaseConfig,
     TestUser,
@@ -328,3 +329,81 @@ def test_classification_ignores_the_tail_of_a_stack_trace():
         f"    at econnrefused_helper_{i} (/x/y.js:{i}:1)" for i in range(50)
     )
     assert reporters.classify_message(message) is Classification.ASSERTION_FAILURE
+
+
+def _endpoint_scenario(sid: str, method: str) -> Scenario:
+    from testtrout.domain.scenario import Action, Step, Target
+
+    return Scenario(
+        id=sid,
+        title=f"{method} /jobs",
+        kind=TestKind.ENDPOINT,
+        status=ScenarioStatus.APPROVED,
+        emitted_to=f"tests/trout/endpoint/{sid}.test.ts",
+        when=[Step(action=Action.REQUEST, target=Target(url="/jobs", method=method))],
+    )
+
+
+def test_a_scenario_knows_whether_it_changes_data():
+    assert _endpoint_scenario("scenario:a", "POST").mutating is True
+    assert _endpoint_scenario("scenario:b", "GET").mutating is False
+
+
+def test_mutating_tests_are_refused_on_a_deployment_that_is_not_disposable(tmp_path: Path):
+    """The guard that stops a suite POSTing to production.
+
+    The prober's network block never covered generated tests: `npx vitest` would
+    happily fire POST /auth/signup at a live deployment.
+    """
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"vitest": "1", "@supabase/supabase-js": "2"}}),
+        encoding="utf-8",
+    )
+    config = Config(supabase=SupabaseConfig(url="https://x.supabase.co", anon_key="env:ANON"))
+    index = ScenarioIndex(
+        scenarios=[
+            _endpoint_scenario("scenario:write", "POST"),
+            _endpoint_scenario("scenario:read", "GET"),
+        ]
+    )
+    record = run(
+        config,
+        Entrypoint(name="production", url="https://app.example.com"),  # not disposable
+        index,
+        tmp_path,
+        tmp_path / "runs",
+    )
+
+    skipped = [r for r in record.results if r.classification is Classification.SKIPPED]
+    assert [r.scenario_id for r in skipped] == ["scenario:write"]
+    assert any("not marked disposable" in note for note in record.notes)
+
+
+def test_a_disposable_deployment_gets_the_write_flag(monkeypatch):
+    """Generated tests check this themselves, so the guarantee survives `npx vitest`."""
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
+    config = Config(
+        supabase=SupabaseConfig(url="https://x.supabase.co", anon_key="env:SUPABASE_ANON_KEY")
+    )
+    read_only = environment.build(config, Entrypoint(name="prod", url="https://x.dev"))
+    assert "TROUT_ALLOW_WRITES" not in read_only.variables
+
+    disposable = environment.build(
+        config,
+        Entrypoint(
+            name="local",
+            url="http://localhost:3000",
+            disposable=True,
+            allow=[Permission.READ, Permission.WRITE],
+        ),
+    )
+    assert disposable.variables["TROUT_ALLOW_WRITES"] == "1"
+
+
+def test_the_generated_helper_refuses_writes_without_the_flag():
+    """Defence in depth: the check lives in the emitted code, not just the runner."""
+    from testtrout.authoring.emitters.endpoint import SETUP_SOURCE
+
+    assert "TROUT_ALLOW_WRITES" in SETUP_SOURCE
+    assert "refusing to" in SETUP_SOURCE
+    assert "guard(" in SETUP_SOURCE
