@@ -121,3 +121,45 @@ def test_no_user_facing_string_names_a_command_that_does_not_exist():
         if stale.search(line)
     ]
     assert offenders == [], f"stale `qa` command references: {offenders}"
+
+
+def test_an_app_in_a_subdirectory_is_found(tmp_path: Path):
+    """A monorepo with frontend/ beside backend/ is a common shape.
+
+    Regression: a repository with no root package.json scanned to nothing —
+    no framework, no screens — because detection only looked at the root.
+    """
+    from testtrout.analysis.detect import find_app_root
+
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "frontend").mkdir()
+    (repo / "frontend" / "package.json").write_text("{}", encoding="utf-8")
+
+    assert find_app_root(repo) == repo / "frontend"
+
+
+def test_a_root_level_app_is_left_alone(tmp_path: Path):
+    from testtrout.analysis.detect import find_app_root
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "package.json").write_text("{}", encoding="utf-8")
+    assert find_app_root(repo) is None
+
+
+def test_a_workspace_package_is_found(tmp_path: Path):
+    from testtrout.analysis.detect import find_app_root
+
+    repo = tmp_path / "repo"
+    (repo / "apps" / "web").mkdir(parents=True)
+    (repo / "apps" / "web" / "package.json").write_text("{}", encoding="utf-8")
+    assert find_app_root(repo) == repo / "apps" / "web"
+
+
+def test_nothing_recognisable_returns_none(tmp_path: Path):
+    from testtrout.analysis.detect import find_app_root
+
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    assert find_app_root(repo) is None

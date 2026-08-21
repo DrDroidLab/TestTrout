@@ -138,15 +138,25 @@ def score_screen(screen: Screen, result: ScanResult) -> tuple[Criticality, list[
     order matters more than a settings page that only reads, regardless of how
     either looks.
     """
-    reached = [op for op in result.data_operations if op.id in screen.reaches]
-    if not reached:
-        return Criticality.LOW, ["no data operations resolved from this screen"]
+    operations = [op for op in result.data_operations if op.id in screen.reaches]
+    endpoints = [e for e in result.endpoints if e.id in screen.reaches]
+    if not operations and not endpoints:
+        return Criticality.LOW, ["no backend calls resolved from this screen"]
 
-    highest = min((op.criticality for op in reached), key=lambda c: c.rank)
-    writes = [op for op in reached if op.operation.writes]
-    reasons = [f"reaches {len(reached)} data operation(s)"]
-    if writes:
-        reasons.append(f"including {len(writes)} that write data")
+    levels = [x.criticality for x in (*operations, *endpoints)]
+    highest = min(levels, key=lambda c: c.rank)
+
+    reasons: list[str] = []
+    if operations:
+        reasons.append(f"reaches {len(operations)} data operation(s)")
+        writes = [op for op in operations if op.operation.writes]
+        if writes:
+            reasons.append(f"including {len(writes)} that write data")
+    if endpoints:
+        reasons.append(f"calls {len(endpoints)} endpoint(s)")
+        mutating = [e for e in endpoints if set(e.methods) & {"POST", "PUT", "PATCH", "DELETE"}]
+        if mutating:
+            reasons.append(f"including {len(mutating)} that change data")
     return highest, reasons
 
 

@@ -125,6 +125,37 @@ def _aliases(root: Path) -> dict[str, list[str]]:
     return {}
 
 
+# Where a frontend lives when the repository root is not itself the app.
+# A monorepo with `frontend/` beside `backend/` is a common shape, and scanning
+# the root of one otherwise finds nothing at all.
+APP_SUBDIRECTORIES = ("frontend", "web", "client", "ui", "www", "site", "app")
+
+
+def find_app_root(root: Path) -> Path | None:
+    """Locate the frontend when it is not at the repository root.
+
+    Returns the subdirectory holding a JavaScript project, or ``None`` when the
+    root itself is the app (or nothing recognisable is there). Only well-known
+    names and one level of `apps/` or `packages/` are searched — walking the
+    whole tree would find every fixture and example in the repository.
+    """
+    if (root / "package.json").is_file():
+        return None
+
+    for name in APP_SUBDIRECTORIES:
+        if (root / name / "package.json").is_file():
+            return root / name
+
+    for workspace in ("apps", "packages"):
+        parent = root / workspace
+        if not parent.is_dir():
+            continue
+        for child in sorted(parent.iterdir()):
+            if (child / "package.json").is_file():
+                return child
+    return None
+
+
 def detect_project(root: Path) -> ProjectContext:
     """Identify the framework, backend, and auth provider of a repository.
 

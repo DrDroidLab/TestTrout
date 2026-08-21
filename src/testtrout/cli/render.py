@@ -135,8 +135,14 @@ def warnings(result: ScanResult) -> None:
     console.print()
     console.print(f"[yellow]{len(result.warnings)} warning(s)[/yellow]")
     for warning in result.warnings[:20]:
-        location = f" [dim]{warning.location}[/dim]" if warning.location else ""
-        console.print(f"  [yellow]·[/yellow] {warning.message}{location}")
+        console.print("  [yellow]·[/yellow] ", end="")
+        # Paths and messages are data. A Next.js route like src/app/[slug]/page.tsx
+        # would otherwise be parsed as a rich style tag and vanish.
+        console.print(
+            warning.message + (f"  {warning.location}" if warning.location else ""),
+            markup=False,
+            style="default",
+        )
     if len(result.warnings) > 20:
         console.print(f"  [dim]… and {len(result.warnings) - 20} more[/dim]")
 

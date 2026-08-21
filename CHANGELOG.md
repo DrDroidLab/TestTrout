@@ -5,6 +5,23 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Monorepos scanned to nothing.** A repository with no root `package.json` —
+  `frontend/` beside `backend/`, a very common shape — reported an unknown
+  framework and zero screens. The scan now finds an app in a well-known
+  subdirectory, or one level into `apps/` or `packages/`, and says where.
+- **Apps with their own HTTP backend were invisible.** Only Supabase call sites
+  counted as a backend surface, so an app using an ordinary API scanned to a
+  list of screens that reached nothing and all scored low. `fetch` call sites
+  are now discovered, including through the near-universal `src/lib/api.ts`
+  client wrapper — which is the difference between finding two literal `fetch`
+  calls and the twenty-eight endpoints an app actually uses.
+- Screens inherit criticality from the endpoints they call, not only from
+  Supabase operations.
+- A Next.js route like `src/app/[slug]/page.tsx` vanished from warning output,
+  parsed as a rich style tag rather than printed as the path it is.
+
 ### Changed
 
 - **Testing no longer requires database credentials.** Tests reach the app over

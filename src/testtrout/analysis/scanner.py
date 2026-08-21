@@ -15,8 +15,14 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from pathlib import Path
 
-from testtrout.analysis import criticality, externals, requirements, supabase_ops
-from testtrout.analysis.detect import ProjectContext, detect_project
+from testtrout.analysis import (
+    criticality,
+    externals,
+    http_calls,
+    requirements,
+    supabase_ops,
+)
+from testtrout.analysis.detect import ProjectContext, detect_project, find_app_root
 from testtrout.analysis.frameworks.base import FrameworkAdapter
 from testtrout.analysis.ids import IdAllocator
 from testtrout.analysis.modules import DEFAULT_MAX_DEPTH, build_graph
@@ -79,8 +85,13 @@ def _attribute_reachability(
     """
     graph = build_graph(files, context.root, context.aliases)
     by_file: dict[str, list[str]] = {}
+    # Both kinds of backend call count. An app with its own HTTP API has no
+    # Supabase call sites, and without this every one of its screens would
+    # reach nothing and score low.
     for operation in result.data_operations:
         by_file.setdefault(operation.location.file, []).append(operation.id)
+    for endpoint in result.endpoints:
+        by_file.setdefault(endpoint.location.file, []).append(endpoint.id)
 
     for screen in result.screens:
         module = screen.layout or screen.location.file
@@ -105,7 +116,13 @@ def scan(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> ScanResult:
         map is still useful.
     """
     root = root.resolve()
-    context = detect_project(root)
+
+    # A repository whose frontend lives in a subdirectory would otherwise scan
+    # to nothing: no package.json at the root means no framework, no screens.
+    app_root = find_app_root(root)
+    context = detect_project(app_root or root)
+    if app_root is not None:
+        context.info.detected_from.append(f"app found in {app_root.relative_to(root).as_posix()}/")
     files, warnings = _parse_all(context)
     allocator = IdAllocator()
 
@@ -129,6 +146,13 @@ def scan(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> ScanResult:
         result.warnings.extend(screen_warnings)
         result.endpoints = adapter.endpoints(files, context, allocator)
         result.server_actions = adapter.server_actions(files, context, allocator)
+
+    # An app with its own HTTP backend has no Supabase call sites; its `fetch`
+    # calls are the backend surface. Additive, so a Next.js app keeps the route
+    # handlers its adapter found and gains the calls its client makes.
+    api_calls, api_warnings = http_calls.discover(files, allocator)
+    result.endpoints.extend(api_calls)
+    result.warnings.extend(api_warnings)
 
     seen_vendors: set[str] = set()
     for _, file in sorted(files.items()):
