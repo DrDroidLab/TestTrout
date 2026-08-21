@@ -114,13 +114,63 @@ def handle_scan(context: JobContext) -> dict[str, Any]:
     context.log(f"found {sum(result.counts.values())} surfaces")
     for warning in result.warnings:
         context.log(f"warning: {warning.message}")
-    return {"counts": result.counts, "warnings": len(result.warnings)}
+
+    # Probing belongs to understanding the product, not to a separate chore: it
+    # is what turns "the code can do this" into "the deployment actually does".
+    probed = None
+    if context.config().entrypoint() is not None:
+        try:
+            probed = handle_probe(context)
+        except Exception as exc:
+            context.log(f"could not probe the deployment: {exc}")
+
+    gaps = _gap_summary(context)
+    context.log(f"{gaps['total']} test(s) worth writing — {gaps['ready']} can be drafted now")
+    for line in gaps["headline"]:
+        context.log(f"  {line}")
+
+    return {
+        "counts": result.counts,
+        "warnings": len(result.warnings),
+        "probed": probed,
+        "gaps": gaps["total"],
+        "ready": gaps["ready"],
+    }
+
+
+def _gap_summary(context: JobContext) -> dict[str, Any]:
+    """What tests are missing, summarised for a job log.
+
+    Part of scanning rather than a separate step: "what does this app do" and
+    "what is untested about it" are the same question asked twice.
+    """
+    from testtrout.planning import gaps as planner
+    from testtrout.planning.existing_tests import detect
+
+    scan = context.scan_result()
+    config = context.config()
+    index, _ = context.scenarios()
+    gap_map = planner.build(
+        scan,
+        intent=context.intent(),
+        probe=context.probe_result(),
+        existing=detect(context.paths.root, scan),
+        roles=[u.role for u in config.test_users],
+        scenarios=index,
+    )
+    ranked = gap_map.ranked(limit=5)
+    return {
+        "total": len(gap_map.gaps),
+        "ready": len([g for g in gap_map.gaps if g.ready]),
+        "headline": [f"[{g.criticality.value}] {g.title}" for g in ranked],
+        "coverage": gap_map.coverage.percent,
+    }
 
 
 def handle_probe(context: JobContext) -> dict[str, Any]:
     """Explore the running deployment."""
     from testtrout.deployment.prober import probe as run_probe
-    from testtrout.deployment.reconcile import reconcile
+    from testtrout.deployment.reconcile import persist_login, reconcile
 
     scan = context.scan_result()
     config = context.config()
@@ -134,6 +184,7 @@ def handle_probe(context: JobContext) -> dict[str, Any]:
 
     observed = run_probe(scan, config, entrypoint, role=context.options.get("role"))
     observed.divergences.extend(reconcile(scan, observed))
+    persist_login(context.paths, observed)
     write_model(context.paths.observed / f"{entrypoint.name}.yaml", observed)
 
     context.log(f"{observed.reachable_count}/{len(observed.screens)} screens reachable")
@@ -275,7 +326,19 @@ def handle_run(context: JobContext) -> dict[str, Any]:
     entrypoint = config.entrypoint(context.options.get("entrypoint"))
     if entrypoint is None:
         raise RuntimeError("no deployment is configured for this repository")
+    # Generate anything approved that has no code yet. Making someone press a
+    # second button to compile what they already approved is ceremony, not
+    # safety — the approval was the decision.
     index, _ = context.scenarios()
+    pending = [
+        item
+        for item in index.by_status(ScenarioStatus.APPROVED)
+        if not item.emitted_to or not (context.paths.root / item.emitted_to).is_file()
+    ]
+    if pending:
+        context.log(f"generating {len(pending)} approved scenario(s) with no code yet")
+        handle_generate(context)
+        index, _ = context.scenarios()
 
     context.log(f"running against {entrypoint.url}")
     context.paths.ensure()

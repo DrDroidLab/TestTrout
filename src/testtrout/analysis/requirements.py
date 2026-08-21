@@ -55,14 +55,16 @@ _RULES: tuple[tuple[re.Pattern[str], RequirementKind, str, tuple[Capability, ...
     (
         re.compile(r"SUPABASE.*(ANON|PUBLISHABLE).*KEY|SUPABASE_KEY$"),
         RequirementKind.SUPABASE_ANON_KEY,
-        "Signs in test users and calls the database the way your app does.",
-        (Capability.API_TESTS, Capability.AUTHORIZATION_TESTS),
+        "Your deployment already has this. TestTrout does not need it — tests go "
+        "through your app's interface and endpoints, not its database.",
+        (),
     ),
     (
         re.compile(r"SUPABASE.*URL"),
         RequirementKind.SUPABASE_URL,
-        "Where your database lives.",
-        (Capability.API_TESTS, Capability.AUTHORIZATION_TESTS),
+        "Your deployment already has this. Only needed here if you want TestTrout to "
+        "reset the database between runs.",
+        (),
     ),
     (
         re.compile(
@@ -122,7 +124,16 @@ def from_source(files: dict[str, SourceFile]) -> list[Requirement]:
                     detected_from="read by the application",
                     # A third-party key is usually only needed for the app to
                     # boot; the calls themselves get intercepted anyway.
-                    optional=kind is RequirementKind.THIRD_PARTY_KEY,
+                    # Anything the *deployment* already holds is optional here:
+                    # tests reach the app over HTTP and through a browser, so
+                    # TestTrout never needs the app's own service credentials.
+                    optional=kind
+                    in {
+                        RequirementKind.THIRD_PARTY_KEY,
+                        RequirementKind.SUPABASE_ANON_KEY,
+                        RequirementKind.SUPABASE_URL,
+                        RequirementKind.SUPABASE_SERVICE_KEY,
+                    },
                 )
         # Files are read once; the regex covers both patterns above.
         del text
@@ -156,9 +167,9 @@ def implied(scan: ScanResult) -> list[Requirement]:
                 name="two test accounts",
                 kind=RequirementKind.TEST_USER,
                 purpose=(
-                    "Proving one user cannot read another's data needs a second account. "
-                    f"This app has {len(scan.policies)} row-level security "
-                    "policy(ies) that only a second user can test."
+                    "Signing in as two accounts is how authorization is tested — what one "
+                    f"can see, the other must not. This app has {len(scan.policies)} "
+                    "row-level security policy(ies) riding on that."
                 ),
                 enables=[Capability.AUTHORIZATION_TESTS],
                 detected_from="row-level security policies found in migrations",

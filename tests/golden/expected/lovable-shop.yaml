@@ -510,8 +510,8 @@ requirements:
   - id: test_users
     name: two test accounts
     kind: test_user
-    purpose: Proving one user cannot read another's data needs a second account. This app has 4 row-level
-      security policy(ies) that only a second user can test.
+    purpose: Signing in as two accounts is how authorization is tested — what one can see, the other must
+      not. This app has 4 row-level security policy(ies) riding on that.
     enables:
       - authorization_tests
     locations: []
@@ -529,27 +529,25 @@ requirements:
   - id: env:VITE_SUPABASE_ANON_KEY
     name: VITE_SUPABASE_ANON_KEY
     kind: supabase_anon_key
-    purpose: Signs in test users and calls the database the way your app does.
-    enables:
-      - api_tests
-      - authorization_tests
+    purpose: Your deployment already has this. TestTrout does not need it — tests go through your app's
+      interface and endpoints, not its database.
+    enables: []
     locations:
       - file: src/integrations/supabase/client.ts
         line: 4
     detected_from: read by the application
-    optional: false
+    optional: true
   - id: env:VITE_SUPABASE_URL
     name: VITE_SUPABASE_URL
     kind: supabase_url
-    purpose: Where your database lives.
-    enables:
-      - api_tests
-      - authorization_tests
+    purpose: Your deployment already has this. Only needed here if you want TestTrout to reset the database
+      between runs.
+    enables: []
     locations:
       - file: src/integrations/supabase/client.ts
         line: 3
     detected_from: read by the application
-    optional: false
+    optional: true
   - id: env:VITE_STRIPE_KEY
     name: VITE_STRIPE_KEY
     kind: third_party_key

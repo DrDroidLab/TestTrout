@@ -21,12 +21,14 @@ from typing import TYPE_CHECKING, Any
 
 from testtrout.deployment import selectors
 from testtrout.deployment.auth.base import AuthOutcome, select_adapter
+from testtrout.deployment.login import LoginForm
 from testtrout.deployment.network import classify, is_noise, should_block
-from testtrout.domain.config import Config, Entrypoint, resolve_secret
+from testtrout.domain.config import Config, Entrypoint, TestUser, resolve_secret
 from testtrout.domain.observation import (
     CallKind,
     Divergence,
     NetworkCall,
+    ObservedLogin,
     ObservedScreen,
     ProbeResult,
 )
@@ -167,8 +169,12 @@ def probe(
             page.on("response", recorder.handle_response)
             page.on("console", recorder.handle_console)
 
+            # Discover the sign-in form once, before authenticating. Everything
+            # downstream replays what is found here rather than re-guessing.
+            discovered = _discover_login(page, config, entrypoint, result)
+
             if role is not None:
-                outcome = _authenticate(context, page, config, role)
+                outcome = _authenticate(context, page, config, role, discovered)
                 result.authenticated = outcome.authenticated
                 result.divergences.append(
                     Divergence(
@@ -193,7 +199,54 @@ def probe(
     return result
 
 
-def _authenticate(context: Any, page: Page, config: Config, role: str) -> AuthOutcome:
+def _discover_login(
+    page: Page, config: Config, entrypoint: Entrypoint, result: ProbeResult
+) -> LoginForm | None:
+    """Locate the sign-in form and report how to reach it.
+
+    Paid once, at probe time, so that generated tests replay a known form
+    instead of re-guessing on every run — which is what makes driving the
+    app's own login viable at all.
+    """
+    from testtrout.deployment import login as login_module
+
+    form = login_module.discover(page, entrypoint.url, hint=config.login.path or None)
+    if form is None:
+        result.divergences.append(
+            Divergence(
+                code="no_login_form",
+                message="no sign-in form was found",
+                detail=(
+                    "Looked at: "
+                    + ", ".join(login_module.CANDIDATE_PATHS)
+                    + ". If this app signs in elsewhere, set the login path in Setup and "
+                    "probe again."
+                ),
+            )
+        )
+        return None
+
+    result.login = ObservedLogin(
+        path=form.path,
+        email_selector=form.email_selector,
+        password_selector=form.password_selector,
+        submit_selector=form.submit_selector,
+        note=form.note,
+    )
+    result.divergences.append(
+        Divergence(
+            code="login_form_found",
+            message=f"sign-in form found at {form.path}",
+            detail=f"{form.email_selector} / {form.password_selector}"
+            + (f" — {form.note}" if form.note else ""),
+        )
+    )
+    return form
+
+
+def _authenticate(
+    context: Any, page: Page, config: Config, role: str, form: LoginForm | None = None
+) -> AuthOutcome:
     """Sign in as the given role, reporting rather than raising on failure."""
     user = config.user(role)
     if user is None:
@@ -202,6 +255,12 @@ def _authenticate(context: Any, page: Page, config: Config, role: str) -> AuthOu
             "none",
             f"no test user with role {role!r} in .trout/config.yaml — run `trout init`",
         )
+    # Prefer the app's own login form. It needs nothing but a URL and a
+    # password, where every other adapter needs credentials a developer may
+    # reasonably refuse to share.
+    if form is not None:
+        return _sign_in_with_form(context, page, config, user, form)
+
     adapter = select_adapter(config)
     if adapter is None:
         return AuthOutcome(
@@ -213,6 +272,39 @@ def _authenticate(context: Any, page: Page, config: Config, role: str) -> AuthOu
         return adapter.authenticate(context, page, config, user)
     except Exception as exc:
         return AuthOutcome(False, adapter.id, f"adapter raised: {exc}")
+
+
+def _sign_in_with_form(
+    context: Any, page: Page, config: Config, user: TestUser, form: LoginForm
+) -> AuthOutcome:
+    """Sign in by driving the discovered form."""
+    from testtrout.deployment import login as login_module
+    from testtrout.domain.config import resolve_secret
+
+    entrypoint = config.entrypoints[0] if config.entrypoints else None
+    if entrypoint is None:
+        return AuthOutcome(False, "form", "no deployment configured")
+
+    try:
+        email = resolve_secret(user.email) or ""
+        password = resolve_secret(user.password) or ""
+    except Exception as exc:
+        return AuthOutcome(False, "form", str(exc))
+
+    try:
+        worked = login_module.sign_in(page, entrypoint.url, form, email, password)
+    except Exception as exc:
+        return AuthOutcome(False, "form", f"driving the sign-in form failed: {exc}")
+
+    return AuthOutcome(
+        worked,
+        "form",
+        f"signed in as {email} through the app's own login form"
+        if worked
+        else "filled the form but the login screen did not go away — the credentials "
+        "were probably rejected",
+        storage_state=context.storage_state() if worked else None,
+    )
 
 
 def _visit_order(screens: list[Screen], max_screens: int | None) -> list[Screen]:

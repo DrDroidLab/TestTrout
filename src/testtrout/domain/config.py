@@ -111,6 +111,42 @@ class Entrypoint(BaseModel):
         return self.disposable and Permission.WRITE in self.allow
 
 
+class LoginConfig(BaseModel):
+    """How to sign a test account in through the application's own login form.
+
+    Driving the form is the only approach that needs nothing but a URL and a
+    password — no database credentials, no API keys, nothing a developer would
+    reasonably refuse to hand over.
+
+    The cost is that every application's form is different. That is solved by
+    discovering it once: ``trout probe`` finds the fields and records the
+    locators here, so the fragility is paid down at setup rather than on every
+    run. Anything it gets wrong can be corrected by hand.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(default="/login", description="Where the sign-in form lives.")
+    email_selector: str | None = Field(
+        default=None, description="Playwright locator source, e.g. getByLabel('Email')."
+    )
+    password_selector: str | None = None
+    submit_selector: str | None = None
+    success_indicator: str | None = Field(
+        default=None,
+        description="A locator that only appears once signed in. Without one, success is "
+        "inferred from leaving the login screen, which is weaker.",
+    )
+    discovered: bool = Field(
+        default=False, description="Whether `trout probe` found these, or a human wrote them."
+    )
+
+    @property
+    def usable(self) -> bool:
+        """Whether a generated test can drive this form."""
+        return bool(self.email_selector and self.password_selector)
+
+
 class IsolationStrategy(StrEnum):
     """How database state is returned to a known baseline between scenarios."""
 
@@ -268,7 +304,14 @@ class Config(BaseModel):
     version: int = 1
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     entrypoints: list[Entrypoint] = Field(default_factory=list)
-    supabase: SupabaseConfig = Field(default_factory=SupabaseConfig)
+    login: LoginConfig = Field(default_factory=LoginConfig)
+    supabase: SupabaseConfig = Field(
+        default_factory=SupabaseConfig,
+        description=(
+            "Optional. Tests drive the app's own API and interface, so direct database "
+            "credentials are never required — they only enable database reset between runs."
+        ),
+    )
     test_users: list[TestUser] = Field(default_factory=list)
     substitution: SubstitutionConfig = Field(default_factory=SubstitutionConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)

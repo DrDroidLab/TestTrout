@@ -117,6 +117,20 @@ cloned. On a typical Supabase app it finds:
 It also tells you when a table is written from browser code with **no row-level
 security** — meaning it is world-writable through the anon key. That is usually news.
 
+## It never asks for your database
+
+Tests reach your app the way a user does: HTTP against your endpoints, and a real
+browser against your interface. Sign-in goes through your own login form, which
+`trout probe` locates once so tests replay a known form instead of guessing.
+
+So the whole thing needs **a URL and two test accounts**. No anon key, no service
+role, no project credentials — nothing most teams would reasonably refuse to hand a
+testing tool.
+
+Authorization is still covered, and arguably better: signed in as two ordinary
+accounts, whatever one can see the other must not. That exercises your policies *and*
+everything your application layers on top of them, which is what a real user meets.
+
 ## Why the tests are worth trusting
 
 **It builds a baseline, not per-PR guesses.** A test derived from the code you just

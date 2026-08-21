@@ -444,7 +444,7 @@ def probe(
     """
     from testtrout.deployment.prober import ProbeUnavailableError
     from testtrout.deployment.prober import probe as run_probe
-    from testtrout.deployment.reconcile import reconcile
+    from testtrout.deployment.reconcile import persist_login, reconcile
 
     paths = _resolve(path)
     if not paths.surfaces.is_file():
@@ -478,6 +478,7 @@ def probe(
         raise typer.Exit(2) from exc
 
     result.divergences.extend(reconcile(scan_result, result))
+    persist_login(paths, result)
     destination = paths.observed / f"{entrypoint.name}.yaml"
     write_model(destination, result)
 

@@ -21,8 +21,10 @@ from __future__ import annotations
 
 from testtrout.deployment.network import is_noise
 from testtrout.deployment.selectors import best_strategy
+from testtrout.domain.config import Config, LoginConfig
 from testtrout.domain.observation import CallKind, Divergence, ProbeResult, SelectorStrategy
 from testtrout.domain.surface import Operation, ScanResult
+from testtrout.store import QaPaths, read_model, write_model
 
 # Console noise that says nothing about application correctness.
 _IGNORED_CONSOLE = ("favicon", "sourcemap", "source map", "devtools", "react devtools")
@@ -260,3 +262,25 @@ def _weak_selectors(probe: ProbeResult) -> list[Divergence]:
 def _screen_id(scan: ScanResult, path: str) -> str | None:
     """Look up the stable surface id for a route path."""
     return next((s.id for s in scan.screens if s.path == path), None)
+
+
+def persist_login(paths: QaPaths, observed: ProbeResult) -> bool:
+    """Save a discovered sign-in form into configuration.
+
+    Written back so the fragile part — finding the form — is paid once at probe
+    time instead of on every generated run. A human can correct it afterwards
+    like any other setting.
+    """
+    if observed.login is None:
+        return False
+    config = read_model(paths.config, Config) if paths.config.is_file() else Config()
+    config.login = LoginConfig(
+        path=observed.login.path,
+        email_selector=observed.login.email_selector,
+        password_selector=observed.login.password_selector,
+        submit_selector=observed.login.submit_selector,
+        discovered=True,
+    )
+    paths.ensure()
+    write_model(paths.config, config)
+    return True

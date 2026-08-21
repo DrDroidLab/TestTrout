@@ -62,8 +62,11 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
     """
     entrypoint = config.entrypoint()
     users = config.test_users
-    supabase_ready = _has(config.supabase.url) and _has(config.supabase.anon_key)
     needs_auth = bool(scan and scan.policies) or bool(scan and scan.project.auth)
+    # Tests drive the app's own interface and endpoints, so direct database
+    # credentials are never required. Supabase settings only enable resetting
+    # the database between runs.
+    login_ready = config.login.usable
 
     readiness: list[Readiness] = []
 
@@ -86,14 +89,14 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
 
     # ------------------------------------------------------------ api tests
     missing = []
-    if entrypoint is None and not supabase_ready:
-        missing.append("a deployment URL, or a Supabase URL and anon key")
+    if entrypoint is None:
+        missing.append("a deployment URL — add one under Deployments")
     readiness.append(
         Readiness(
             capability=Capability.API_TESTS,
             ready=not missing,
             missing=missing,
-            detail="Calls endpoints and the database directly. Fast and stable; no browser.",
+            detail="Calls your app's HTTP endpoints directly. Fast and stable; no browser.",
         )
     )
 
@@ -107,8 +110,10 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
         )
     if needs_auth and not users:
         missing.append("at least one test account — this app is behind a login")
-    if needs_auth and users and not supabase_ready:
-        missing.append("a Supabase URL and anon key, to sign the test account in")
+    if needs_auth and users and not login_ready:
+        missing.append(
+            "the sign-in form has not been located yet — run a probe, which finds it once"
+        )
     readiness.append(
         Readiness(
             capability=Capability.BROWSER_TESTS,
@@ -123,8 +128,16 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
 
     # ------------------------------------------------ authorization tests
     missing = []
-    if not supabase_ready:
-        missing.append("a Supabase URL and anon key")
+    if entrypoint is None:
+        missing.append("a deployment URL — add one under Deployments")
+    if not _playwright_installed():
+        missing.append(
+            "browser support — pip install 'testtrout[probe]' && playwright install chromium"
+        )
+    if users and not login_ready:
+        missing.append(
+            "the sign-in form has not been located yet — run a probe, which finds it once"
+        )
     if len(users) < 2:
         missing.append(
             f"a second test account — you have {len(users)}; proving user A cannot see "
@@ -136,10 +149,8 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
             ready=not missing,
             missing=missing,
             detail=(
-                f"Proves your {len(scan.policies)} row-level security policy(ies) actually "
-                "hold. The cheapest high-value tests available."
-                if scan
-                else "Proves your row-level security policies hold. Scan first to see how many."
+                "Signs in as two accounts and requires that what one can see, the other "
+                "cannot. Runs through the interface, so no database credentials are needed."
             ),
         )
     )

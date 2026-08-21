@@ -64,7 +64,7 @@ nextjs-app = "testtrout.analysis.frameworks.nextjs:NextAppRouterAdapter"
 
 [project.entry-points."testtrout.emitters"]
 playwright = "testtrout.authoring.emitters.playwright:PlaywrightEmitter"
-rls-vitest = "testtrout.authoring.emitters.rls:RlsEmitter"
+authorization = "testtrout.authoring.emitters.authz:BrowserAuthorizationEmitter"
 endpoint-vitest = "testtrout.authoring.emitters.endpoint:EndpointEmitter"
 
 [project.entry-points."testtrout.auth"]

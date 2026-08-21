@@ -151,6 +151,23 @@ class Divergence(BaseModel):
     detail: str | None = None
 
 
+class ObservedLogin(BaseModel):
+    """A sign-in form the probe located.
+
+    Recorded so that generated tests replay a known form rather than guessing
+    at one on every run — which is what makes driving the app's own login a
+    viable alternative to holding its database credentials.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    email_selector: str
+    password_selector: str
+    submit_selector: str | None = None
+    note: str = ""
+
+
 class ProbeResult(BaseModel):
     """Everything one probe run observed. Written to ``.trout/observed/``."""
 
@@ -161,6 +178,9 @@ class ProbeResult(BaseModel):
     base_url: str
     role: str | None = Field(default=None, description="Which test user was signed in.")
     authenticated: bool = False
+    login: ObservedLogin | None = Field(
+        default=None, description="The sign-in form, if one was found."
+    )
     screens: list[ObservedScreen] = Field(default_factory=list)
     divergences: list[Divergence] = Field(default_factory=list)
     external_hosts: list[str] = Field(

@@ -193,11 +193,10 @@
 <main>
   <section id="overview" class="active">
     <div class="toolbar" id="actions">
-      <button class="action" data-act="scan">Scan</button>
-      <button class="action" data-act="probe">Probe</button>
-      <button class="action" data-act="intent">Capture intent</button>
-      <button class="action" data-act="propose">Propose</button>
-      <button class="action" data-act="generate">Generate</button>
+      <button class="action primary" data-act="scan">Scan</button>
+      <span class="muted" style="font-size:12.5px">analyse the code, check the deployment, list what is untested</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="action" data-act="propose">Draft tests</button>
       <button class="action primary" data-act="run">Run</button>
       <button class="action" data-act="certify">Certify</button>
     </div>
@@ -742,18 +741,38 @@ function renderSetup() {
     </div>
 
     <div class="card" style="margin-bottom:14px">
-      <strong>Supabase</strong>
+      <strong>Sign-in</strong>
+      <div class="muted" style="font-size:12.5px">
+        Tests sign in through your app's own login form — no database credentials needed.
+        Run a probe and TestTrout finds the form once; correct it here if it gets it wrong.
+      </div>
+      <table>
+        <tr><td class="muted" style="width:210px">Login page</td>
+          <td><input type="text" id="login-path" value="${esc(cfg.login?.path || '/login')}" placeholder="/login" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
+        <tr><td class="muted">Form</td><td>
+          ${cfg.login?.email_selector
+            ? `<span class="pill pass">found</span> <span class="mono muted" style="font-size:11px">${esc(cfg.login.email_selector)}</span>`
+            : '<span class="pill warning">not located yet</span> <span class="muted" style="font-size:12.5px">run a probe</span>'}
+        </td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <strong>Supabase <span class="muted" style="font-weight:400">(optional)</span></strong>
+      <div class="muted" style="font-size:12.5px">
+        Not needed to write or run tests. Only fill this in if you want TestTrout to
+        reset the database between runs.
+      </div>
       <table>
         <tr><td class="muted" style="width:210px">Project URL</td>
-          <td><input type="text" id="sb-url" value="${esc(cfg.supabase?.url || '')}" placeholder="https://YOUR-REF.supabase.co" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
-        ${varRow('Anon key', 'SUPABASE_ANON_KEY', 'signs test users in')}
-        ${varRow('Service-role key', 'SUPABASE_SERVICE_ROLE_KEY', 'optional — seeding and reset only')}
+          <td><input type="text" id="sb-url" value="${esc(cfg.supabase?.url || '')}" placeholder="leave blank" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
+        ${varRow('Service-role key', 'SUPABASE_SERVICE_ROLE_KEY', 'seeding and reset only')}
         <tr><td class="muted">Database isolation</td><td>
           <select id="sb-isolation" class="repo" style="max-width:260px">
             ${['scoped_seed', 'local_reset', 'branch'].map((v) =>
               `<option value="${v}" ${cfg.supabase?.isolation === v ? 'selected' : ''}>${v}</option>`).join('')}
           </select>
-          <div class="muted" style="font-size:11px;margin-top:3px">scoped_seed performs no reset; local_reset needs the Supabase CLI</div>
+          <div class="muted" style="font-size:11px;margin-top:3px">scoped_seed performs no reset — the default, and fine without Supabase access</div>
         </td></tr>
       </table>
     </div>
@@ -818,6 +837,7 @@ function harvestSetup() {
     url: $('sb-url').value.trim(),
     isolation: $('sb-isolation').value,
   };
+  cfg.login = { ...(cfg.login || {}), path: $('login-path').value.trim() || '/login' };
   cfg.model = {
     ...(cfg.model || {}),
     provider: $('model-provider').value,
@@ -864,9 +884,9 @@ function wireSetup() {
         .filter((e) => e.url)
         .map((e) => ({ ...e, confirm_disposable: e.disposable })),
       test_users: (c.test_users || []).filter((u) => u.role),
+      login: { path: c.login?.path || '/login' },
       supabase: {
         url: c.supabase?.url || '',
-        anon_key_var: 'SUPABASE_ANON_KEY',
         service_key_var: 'SUPABASE_SERVICE_ROLE_KEY',
         isolation: c.supabase?.isolation || 'scoped_seed',
       },

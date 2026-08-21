@@ -145,6 +145,8 @@ def apply(paths: QaPaths, patch: dict[str, Any]) -> Config:
         config.entrypoints = [_entrypoint(item) for item in patch["entrypoints"] or []]
     if "test_users" in patch:
         config.test_users = [_test_user(item) for item in patch["test_users"] or []]
+    if "login" in patch:
+        _apply_login(config, patch["login"] or {})
     if "supabase" in patch:
         _apply_supabase(config, patch["supabase"] or {})
     if "model" in patch:
@@ -198,6 +200,19 @@ def _test_user(item: dict[str, Any]) -> TestUser:
         email=_reference(item.get("email_var") or f"TROUT_{upper}_EMAIL"),
         password=_reference(item.get("password_var") or f"TROUT_{upper}_PASSWORD"),
     )
+
+
+def _apply_login(config: Config, patch: dict[str, Any]) -> None:
+    """Update the sign-in form settings.
+
+    Selectors are usually written by a probe, but a human correcting a bad
+    guess is a first-class path — so they are editable here too.
+    """
+    for name in ("path", "email_selector", "password_selector", "submit_selector"):
+        if name in patch:
+            setattr(config.login, name, str(patch[name] or "") or None)
+    if config.login.path is None:
+        config.login.path = "/login"
 
 
 def _apply_supabase(config: Config, patch: dict[str, Any]) -> None:

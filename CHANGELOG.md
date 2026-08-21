@@ -5,6 +5,24 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Testing no longer requires database credentials.** Tests reach the app over
+  HTTP and through a browser; sign-in drives the application's own login form,
+  which `trout probe` locates once and records. A URL and two test accounts are
+  now the whole requirement.
+- Authorization tests moved from Supabase queries to the interface: signed in as
+  two accounts, whatever one can see the other must not. This exercises the
+  policy *and* everything the app layers on top of it.
+- Supabase settings are optional, and only enable resetting the database between
+  runs. The Setup panel says so.
+- **Scan now analyses, probes, and reports what is untested** — one action rather
+  than three, since "what does this app do" and "what is untested about it" are
+  the same question asked twice.
+- **Run generates any approved scenario that has no code yet**, then executes.
+  Pressing a second button to compile what you already approved was ceremony,
+  not safety.
+
 ### Added
 
 - **Credential discovery.** The scan now reports which environment variables the
