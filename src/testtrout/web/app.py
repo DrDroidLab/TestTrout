@@ -289,6 +289,39 @@ def create_app(database: Database | None = None) -> FastAPI:
             "problems": problems,
         }
 
+    @app.get("/api/repos/{repo_id}/tests")
+    def tests(repo_id: int) -> dict[str, Any]:
+        """Every test, with its last result and anything flagged against it.
+
+        Joined here rather than in the browser: a scenario file, a run record,
+        and the question log each hold one third of the answer, and a list that
+        does not join them shows tests with no indication of which are actually
+        protecting anything.
+        """
+        from testtrout.planning import tests_view
+
+        paths = paths_for(repo_id)
+        index, _ = scenarios_of(paths)
+        records = []
+        if paths.runs.is_dir():
+            for path in sorted(paths.runs.glob("*.yaml"), reverse=True)[:10]:
+                try:
+                    records.append(read_model(path, RunRecord))
+                except Exception:
+                    continue
+
+        views = tests_view.build(index, tests_view.latest_results(records), _questions(paths).questions)
+        return {
+            "tests": [
+                view.model_dump(mode="json") | {"label": view.state.label, "flagged": view.flagged}
+                for view in views
+            ],
+            "counts": {
+                state.value: sum(1 for v in views if v.state is state)
+                for state in tests_view.TestState
+            },
+        }
+
     @app.get("/api/repos/{repo_id}/intent")
     def intent(repo_id: int) -> dict[str, Any]:
         """Captured product intent."""

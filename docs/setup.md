@@ -16,7 +16,15 @@ pip install testtrout
 trout up
 ```
 
-Link a repository, then open **Setup**. Every setting lives there:
+Three tabs, and progress streams into a drawer on the right while a job runs.
+
+| Tab | What it answers |
+|---|---|
+| **Report** | What this project is, what needs testing, and what moved since the last scan |
+| **Tests** | Every test and its state — passing, failing, needs you, could not run — with whatever is flagged against it |
+| **Setup** | Every setting |
+
+Add a project, then open **Setup**. Every setting lives there:
 
 | Section | What it does |
 |---|---|

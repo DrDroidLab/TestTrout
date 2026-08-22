@@ -26,6 +26,7 @@ from testtrout.domain.config import Config
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import ProbeResult
 from testtrout.domain.overview import ProjectOverview
+from testtrout.domain.run import RunRecord
 from testtrout.domain.scenario import ScenarioIndex, ScenarioStatus
 from testtrout.domain.surface import ScanResult
 from testtrout.store import QaPaths, apply_scan, load_dotenv, read_model, write_model
@@ -444,6 +445,9 @@ def handle_build(context: JobContext) -> dict[str, Any]:
         limit=int(context.options.get("limit", 5)),
         log=context.log,
     )
+    if outcome.run_id:
+        record = read_model(context.paths.runs / f"{outcome.run_id}.yaml", RunRecord)
+        context.registry.record_run(context.repo_id, record)
     return outcome.as_dict() | {"questions": _refresh_questions(context)}
 
 

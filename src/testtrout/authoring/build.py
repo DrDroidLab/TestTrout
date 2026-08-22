@@ -26,7 +26,7 @@ from testtrout.domain.observation import ProbeResult
 from testtrout.domain.scenario import Scenario, ScenarioStatus
 from testtrout.domain.surface import ScanResult
 from testtrout.llm.gateway import Gateway
-from testtrout.store import QaPaths
+from testtrout.store import QaPaths, write_model
 
 
 @dataclass
@@ -43,6 +43,8 @@ class BuildOutcome:
     """Written and run, but did not pass. Each carries the failure as a question."""
     unclear: list[str] = field(default_factory=list)
     """Never run — something about them was ambiguous from the start."""
+    run_id: str = ""
+    """The record holding what happened, if anything ran."""
 
     @property
     def drafted(self) -> int:
@@ -54,9 +56,14 @@ class BuildOutcome:
         """How many are waiting on a person."""
         return len(self.held) + len(self.unclear)
 
-    def as_dict(self) -> dict[str, int]:
+    def as_dict(self) -> dict[str, object]:
         """Summary for a job result or a ``--json`` response."""
-        return {"drafted": self.drafted, "kept": len(self.kept), "held": self.needs_you}
+        return {
+            "drafted": self.drafted,
+            "kept": len(self.kept),
+            "held": self.needs_you,
+            "run_id": self.run_id,
+        }
 
 
 def build_suite(
@@ -91,6 +98,7 @@ def build_suite(
     from testtrout.authoring import propose as authoring
     from testtrout.authoring.base import select_emitter
     from testtrout.authoring.store import load_all, save
+    from testtrout.domain.run import RunRecord
     from testtrout.planning import gaps as planner
     from testtrout.planning.existing_tests import detect
     from testtrout.runtime.runner import run as execute
@@ -111,6 +119,11 @@ def build_suite(
         return outcome
 
     paths.ensure()
+    # Every test run here goes into one record. Without it a test that was just
+    # proven has no evidence on disk, and the tests list has to report it as
+    # never having run — which is exactly the visibility this is meant to give.
+    combined: RunRecord | None = None
+
     for position, candidate in enumerate(candidates, start=1):
         log(f"drafting {position}/{len(candidates)}: {candidate.title}")
         scenario, warnings = authoring.propose(
@@ -157,6 +170,13 @@ def build_suite(
         for note in record.notes:
             log(f"  {note}")
 
+        if combined is None:
+            combined = record.model_copy(deep=True)
+        else:
+            combined.results.extend(record.results)
+            combined.notes.extend(n for n in record.notes if n not in combined.notes)
+            combined.finished_at = record.finished_at
+
         result = next((r for r in record.results if r.scenario_id == scenario.id), None)
         if result is not None and result.passed:
             scenario.status = ScenarioStatus.CERTIFIED
@@ -177,6 +197,10 @@ def build_suite(
             )
             _hold(paths, scenario, outcome.held)
             log(f"  held back: {scenario.title} — {detail[:60]}")
+
+    if combined is not None:
+        write_model(paths.runs / f"{combined.id}.yaml", combined, header=False)
+        outcome.run_id = combined.id
 
     log(
         f"{len(outcome.kept)} test(s) proven against your deployment, "

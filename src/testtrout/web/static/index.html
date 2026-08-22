@@ -45,9 +45,14 @@
   nav button.active { color: var(--text); border-bottom-color: var(--accent); }
   nav button:hover { color: var(--text); }
 
-  main { padding: 20px; max-width: 1200px; }
+  #shell { transition: margin-right 0.15s ease; }
+  body.drawer-open #shell { margin-right: 400px; }
+  main { padding: 20px 24px 60px; max-width: 1100px; }
   section { display: none; }
   section.active { display: block; }
+  h2.title { font-size: 17px; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.2px; }
+  p.lede { color: var(--muted); margin: 0 0 18px; font-size: 13px; max-width: 62ch; }
+  .stack > * + * { margin-top: 10px; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
   .card {
@@ -117,24 +122,63 @@
     padding: 10px 12px; overflow-x: auto; font-size: 12.5px; margin: 8px 0;
   }
 
-  #log {
-    position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
-    background: var(--panel); border-top: 1px solid var(--border); padding: 10px 20px;
-    display: none;
+  /* Progress lives on the right, not the bottom: a build runs one test at a
+     time for minutes, and a strip along the bottom shows four lines of it. */
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 400px;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: none; flex-direction: column; z-index: 20;
   }
-  #log.open { display: block; }
-  #log .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-  #log .line { font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 1px 0; }
-  #log .warn { color: var(--warn); }
-  #log .error { color: var(--fail); }
-  #log .info { color: var(--muted); }
+  body.drawer-open #drawer { display: flex; }
+  #drawer .head {
+    display: flex; align-items: center; gap: 9px; padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #drawer .head strong { font-size: 13px; }
+  #log-lines { flex: 1; overflow-y: auto; padding: 10px 16px 20px; }
+  #log-lines .line {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; padding: 2px 0;
+    white-space: pre-wrap; word-break: break-word; color: var(--muted);
+  }
+  #log-lines .line.step { color: var(--text); margin-top: 8px; }
+  #log-lines .line.good { color: var(--pass); }
+  #log-lines .line.bad { color: var(--fail); }
+  #log-lines .line.error { color: var(--fail); }
+  #drawer .past {
+    border-top: 1px solid var(--border); padding: 10px 16px; max-height: 34%;
+    overflow-y: auto;
+  }
+  #drawer .past .row {
+    display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 0;
+    cursor: pointer;
+  }
+  #drawer .past .row:hover { color: var(--accent); }
   .spinner {
     width: 11px; height: 11px; border: 2px solid var(--border);
     border-top-color: var(--accent); border-radius: 50%;
     animation: spin 0.7s linear infinite; display: inline-block;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+  .empty { color: var(--muted); padding: 34px 0; text-align: center; }
+
+  /* One test, and whatever is flagged against it. */
+  .test {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--panel); padding: 11px 13px;
+  }
+  .test.flagged { border-left: 3px solid var(--warn); }
+  .test.failing { border-left-color: var(--fail); }
+  .test.passing { border-left: 3px solid var(--pass); }
+  .test .top { display: flex; gap: 9px; align-items: baseline; }
+  .test .why { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+  .test .why.bad { color: var(--fail); }
+  .ask { display: flex; gap: 7px; margin-top: 8px; }
+  .ask input {
+    flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px;
+  }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button.on { border-color: var(--accent); color: var(--accent); }
 </style>
 
 <style>
@@ -179,59 +223,45 @@
   <span class="muted mono" id="version"></span>
 </header>
 
+<div id="shell">
 <nav>
-  <button data-tab="overview" class="active">Overview</button>
-  <button data-tab="questions">Questions <span id="q-badge"></span></button>
-  <button data-tab="scenarios">Tests</button>
-  <button data-tab="gaps">Needs testing</button>
-  <button data-tab="runs">Runs</button>
+  <button data-tab="report" class="active">Report</button>
+  <button data-tab="tests">Tests <span id="t-badge"></span></button>
   <button data-tab="setup">Setup</button>
-  <button data-tab="jobs">Activity</button>
-  <button data-tab="agent">Agent</button>
+  <span style="flex:1"></span>
+  <button id="drawer-toggle" style="border-bottom-color:transparent">Progress</button>
 </nav>
 
 <main>
-  <section id="overview" class="active">
-    <div class="toolbar" id="actions">
-      <button class="action" data-act="scan">Scan</button>
-      <button class="action primary" data-act="build">Build tests</button>
-      <button class="action primary" data-act="run">Run tests</button>
-      <span class="spacer" style="flex:1"></span>
-      <span class="muted" style="font-size:12.5px">
-        Scan finds what needs testing · Build writes tests and proves them against your
-        deployment · Run checks nothing broke
-      </span>
+  <section id="report" class="active">
+    <h2 class="title">What this project is, and what needs testing</h2>
+    <p class="lede">Read from your code. Scan again any time — the second scan reports
+       what moved rather than reprinting the list.</p>
+    <div class="toolbar">
+      <button class="action primary" data-act="scan">Scan</button>
+      <span class="muted" style="font-size:12.5px" id="scan-hint"></span>
     </div>
     <div class="grid" id="cards"></div>
-    <div id="overview-notes"></div>
-    <div id="overview-config"></div>
+    <div id="report-body"></div>
   </section>
 
-  <section id="gaps">
+  <section id="tests">
+    <h2 class="title">Tests</h2>
+    <p class="lede">Each test is written, then run against your deployment before the next
+       one starts. Only a test that passes is kept; anything failing or unanswered is
+       flagged here against the test it belongs to.</p>
     <div class="toolbar">
-      <span class="muted">Ranked by what to write first. Every rank is the sum of named contributions.</span>
+      <button class="action primary" data-act="build">Generate tests</button>
+      <button class="action" data-act="run">Run all</button>
       <span class="spacer" style="flex:1"></span>
-      <button class="action primary" data-act="build">Build tests for these</button>
+      <span class="filters" id="test-filters"></span>
     </div>
-    <div id="gaps-body"></div>
+    <div id="tests-body"></div>
   </section>
 
-  <section id="scenarios">
-    <div class="toolbar">
-      <span class="muted">Approve what you want in the suite. Nothing is approved for you.</span>
-      <span class="spacer" style="flex:1"></span>
-      <button class="action" data-act="run">Run tests</button>
-    </div>
-    <div id="scenarios-body"></div>
-  </section>
-
-  <section id="questions"><div id="questions-body"></div></section>
   <section id="setup"><div id="setup-body"></div></section>
-  
-  <section id="runs"><div id="runs-body"></div></section>
-  <section id="jobs"><div id="jobs-body"></div></section>
-  <section id="agent"><div id="agent-body"></div></section>
 </main>
+</div>
 
 <dialog id="link-dialog">
   <h3>Add a project</h3>
@@ -264,15 +294,19 @@
   </div>
 </dialog>
 
-<div id="log">
+<aside id="drawer">
   <div class="head">
     <span id="log-state"></span>
-    <strong id="log-name" class="mono"></strong>
+    <strong id="log-name">Progress</strong>
     <span class="spacer" style="flex:1"></span>
-    <button class="action" onclick="document.getElementById('log').classList.remove('open')">Hide</button>
+    <button class="action" id="drawer-close">Hide</button>
   </div>
   <div id="log-lines"></div>
-</div>
+  <div class="past">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Earlier</div>
+    <div id="past-jobs"></div>
+  </div>
+</aside>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -293,9 +327,9 @@ async function api(path, options) {
 
 // ---------------------------------------------------------------- tabs
 
-document.querySelectorAll('nav button').forEach((b) => {
+document.querySelectorAll('nav button[data-tab]').forEach((b) => {
   b.onclick = () => {
-    document.querySelectorAll('nav button').forEach((x) => x.classList.remove('active'));
+    document.querySelectorAll('nav button[data-tab]').forEach((x) => x.classList.remove('active'));
     document.querySelectorAll('section').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     $(b.dataset.tab).classList.add('active');
@@ -385,7 +419,7 @@ $('link-confirm').onclick = async () => {
     localStorage.setItem('trout.repo', repo.id);
     await loadRepos();
     await loadRepo();
-    openLog('scan');
+    openDrawer('Scanning');
   } catch (e) { alert(e.message); }
 };
 
@@ -401,20 +435,24 @@ document.querySelectorAll('[data-act]').forEach((b) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, options }),
       });
-      openLog(kind, job.id);
+      openDrawer(kind === 'build' ? 'Generating tests'
+        : kind === 'run' ? 'Running tests' : 'Scanning', job.id);
     } catch (e) { alert(e.message); }
   };
 });
 
-function openLog(name, jobId) {
-  $('log').classList.add('open');
-  $('log-name').textContent = name;
+function openDrawer(name, jobId) {
+  document.body.classList.add('drawer-open');
+  $('log-name').textContent = name ? `${name}…` : 'Progress';
   $('log-lines').innerHTML = '';
   $('log-state').innerHTML = '<span class="spinner"></span>';
   setBusy(true);
   if (jobId) follow(jobId);
   else pollLatestJob(name);
 }
+
+$('drawer-toggle').onclick = () => document.body.classList.toggle('drawer-open');
+$('drawer-close').onclick = () => document.body.classList.remove('drawer-open');
 
 async function pollLatestJob(kind) {
   const d = await api(`/api/jobs?repo_id=${state.repoId}&limit=5`).catch(() => null);
@@ -426,6 +464,18 @@ function setBusy(busy) {
   document.querySelectorAll('[data-act]').forEach((b) => { b.disabled = busy; });
 }
 
+/** Colour a progress line by what it says, so a long build stays readable. */
+function logLine(text, className) {
+  const div = document.createElement('div');
+  div.className = `line ${className || (
+    /^\s*kept:/.test(text) ? 'good'
+    : /^\s*(held back|could not|no emitter|refus)/.test(text) ? 'bad'
+    : /^\S/.test(text) ? 'step' : '')}`;
+  div.textContent = text;
+  $('log-lines').appendChild(div);
+  $('log-lines').scrollTop = $('log-lines').scrollHeight;
+}
+
 function follow(jobId) {
   const source = new EventSource(`/api/jobs/${jobId}/stream`);
   source.onmessage = (event) => {
@@ -433,21 +483,16 @@ function follow(jobId) {
     if (line.done) {
       source.close();
       $('log-state').textContent = line.state === 'failed' ? '✕' : '✓';
-      if (line.error) {
-        const div = document.createElement('div');
-        div.className = 'line error';
-        div.textContent = line.error;
-        $('log-lines').appendChild(div);
-      }
+      $('log-name').textContent = $('log-name').textContent.replace(/…$/, '');
+      if (line.error) logLine(line.error, 'error');
       setBusy(false);
       loadRepos(); loadRepo();
       return;
     }
-    const div = document.createElement('div');
-    div.className = 'line info';
-    div.textContent = line.message;
-    $('log-lines').appendChild(div);
-    $('log').scrollTop = $('log').scrollHeight;
+    logLine(line.message);
+    // The tests list is the point of a build, so let it fill in as it happens
+    // rather than all at once when the job ends.
+    if (/^\s*(kept|held back):/.test(line.message)) loadTests();
   };
   source.onerror = () => { source.close(); setBusy(false); loadRepo(); };
 }
@@ -455,262 +500,306 @@ function follow(jobId) {
 // --------------------------------------------------------------- render
 
 function render(tab) {
-  ({ overview: renderOverview, setup: renderSetup, gaps: renderGaps,
-      questions: renderQuestions, scenarios: renderScenarios,
-      surfaces: renderSurfaces, runs: renderRuns, jobs: renderJobs,
-      agent: renderAgent }[tab] || (() => {}))();
+  renderChrome();
+  ({ report: renderReport, tests: renderTests, setup: renderSetup }[tab] || (() => {}))();
 }
 
-function renderOverview() {
+/** The bits outside any one tab: safety flag, badge, past jobs. */
+function renderChrome() {
   const o = state.overview || {};
-  const pr = state.project || {};
-  const w = (o.entrypoints || []).filter((e) => e.writable);
+  const writable = (o.entrypoints || []).filter((e) => e.writable);
   $('safety').innerHTML = !state.repoId ? ''
     : (o.entrypoints || []).length === 0
       ? '<span class="pill low">no deployment</span>'
-      : w.length ? `<span class="pill high">${w.length} writable</span>`
-                 : '<span class="pill pass">read-only</span>';
+      : writable.length ? `<span class="pill high">${writable.length} writable</span>`
+                        : '<span class="pill pass">read-only</span>';
 
-  const openCount = o.open_questions || 0;
-  $('q-badge').innerHTML = openCount
-    ? `<span class="pill warning" style="margin-left:4px">${openCount}</span>` : '';
+  const counts = (state.tests || {}).counts || {};
+  const attention = (counts.failing || 0) + (counts.needs_info || 0);
+  $('t-badge').innerHTML = attention
+    ? `<span class="pill warning" style="margin-left:4px">${attention}</span>` : '';
+
+  const jobs = (state.jobs || {}).jobs || [];
+  $('past-jobs').innerHTML = jobs.slice(0, 12).map((j) => `
+    <div class="row" data-job="${j.id}">
+      <span class="pill ${j.state === 'done' ? 'pass' : j.state === 'failed' ? 'fail' : 'warning'}">${
+        j.state === 'done' ? '✓' : j.state === 'failed' ? '✕' : j.state}</span>
+      <span class="mono">${esc(j.kind)}</span>
+      <span class="muted" style="flex:1;text-align:right">${
+        j.duration_seconds != null ? j.duration_seconds + 's' : ''}</span>
+    </div>`).join('') || '<div class="muted" style="font-size:12px">nothing yet</div>';
+
+  document.querySelectorAll('[data-job]').forEach((row) => {
+    row.onclick = async () => {
+      const job = await api(`/api/jobs/${row.dataset.job}`).catch(() => null);
+      if (!job) return;
+      $('log-name').textContent = job.kind;
+      $('log-state').textContent = job.state === 'failed' ? '✕' : '✓';
+      $('log-lines').innerHTML = '';
+      (job.log || []).forEach((l) => logLine(l));
+      if (job.error) logLine(job.error, 'error');
+    };
+  });
+}
+
+function renderReport() {
+  const pr = state.project || {};
 
   if (!state.repoId) {
     $('cards').innerHTML = '';
-    $('overview-notes').innerHTML =
-      '<div class="empty">No project yet. Press <strong>Add project</strong> to start.</div>';
-    $('overview-config').innerHTML = '';
+    $('report-body').innerHTML =
+      '<div class="empty">No project yet. Press <strong>Add project</strong> above.</div>';
+    $('scan-hint').textContent = '';
     return;
   }
   if (!pr.scanned) {
     $('cards').innerHTML = '';
-    $('overview-notes').innerHTML =
+    $('report-body').innerHTML =
       '<div class="empty">Press <strong>Scan</strong> to find out what this project does.</div>';
-    $('overview-config').innerHTML = '';
+    $('scan-hint').textContent = 'Reads your code. No API key, no network.';
     return;
   }
+  $('scan-hint').textContent = '';
 
   const c = pr.coverage || {};
-  const bar = (label, pct, covered, total) => `
+  const bar = (label, pct, covered, total, note) => `
     <div class="card">
       <div class="label">${label}</div>
       <div class="value">${pct ?? 0}%</div>
       <div class="bar"><div style="width:${pct ?? 0}%"></div></div>
-      <div class="sub">${covered ?? 0} of ${total ?? 0} tested</div>
+      <div class="sub">${covered ?? 0} of ${total ?? 0} tested${note ? ' · ' + note : ''}</div>
     </div>`;
 
   $('cards').innerHTML =
-    bar('Transactions', c.transactions_percent, c.transactions_covered, c.transactions_total) +
+    bar('Transactions', c.transactions_percent, c.transactions_covered, c.transactions_total,
+        'where regressions cost most') +
     bar('Pages', c.pages_percent, c.pages_covered, c.pages_total) +
-    bar('APIs', c.apis_percent, c.apis_covered, c.apis_total) +
-    `<div class="card">
-       <div class="label">Tests</div>
-       <div class="value">${Object.values(o.scenarios || {}).reduce((a, b) => a + b, 0)}</div>
-       <div class="sub">${Object.entries(o.scenarios || {}).map(([k, v]) => `${v} ${k}`).join(' · ') || 'none yet'}</div>
-     </div>
-     <div class="card">
-       <div class="label">Questions</div>
-       <div class="value">${openCount}</div>
-       <div class="sub">${openCount ? 'answering these unblocks tests' : 'nothing outstanding'}</div>
-     </div>`;
+    bar('APIs', c.apis_percent, c.apis_covered, c.apis_total);
 
   const d = pr.delta || {};
-  const changeList = (label, items) => !items?.length ? '' : `
-    <div class="note"><strong>${label}</strong>
+  const moved = (label, items) => !items?.length ? '' : `
+    <div class="note"><strong>${label} — ${items.length}</strong>
       ${items.slice(0, 6).map((i) => `<div class="mono" style="font-size:12px">${esc(i)}</div>`).join('')}
-      ${items.length > 6 ? `<div class="muted" style="font-size:12px">and ${items.length - 6} more</div>` : ''}
+      ${items.length > 6 ? `<div style="font-size:12px">and ${items.length - 6} more</div>` : ''}
     </div>`;
 
-  $('overview-notes').innerHTML = `
-    <p style="font-size:15px;margin-top:18px">${esc(pr.summary || '')}</p>
-    ${(pr.needs_from_you || []).length ? `<div class="warnbox">
-      <strong>What TestTrout still needs from you</strong>
-      ${pr.needs_from_you.map((n) => `<div class="note">${esc(n)}</div>`).join('')}
-    </div>` : ''}
-    ${d.has_changes ? `<div class="warnbox">
-      <strong>Since your last scan</strong>
-      ${changeList('New in the code', d.new_areas)}
-      ${changeList('Now covered by a test', d.newly_covered)}
-      ${changeList('No longer in the code', d.gone)}
-    </div>` : ''}
-    ${(d.still_missing || []).length ? `<div class="note" style="margin-top:14px">
-      <strong>Still untested — ${d.still_missing.length}, most critical first</strong>
-      <div class="muted" style="font-size:12px;margin-top:4px">
-        ${d.still_missing.slice(0, 8).map((i) => esc(i)).join(' · ')}
-        ${d.still_missing.length > 8 ? ` · and ${d.still_missing.length - 8} more` : ''}
-      </div>
-      <div class="muted" style="font-size:12px;margin-top:6px">
-        Press <strong>Build tests</strong> to work down this list. Each test is
-        run against your deployment as it is written, and only kept if it passes.
-      </div>
-    </div>` : ''}`;
+  const needs = pr.needs_from_you || [];
+  const missing = d.still_missing || [];
 
-  const section = (title, note, rows) => `
-    <h3 style="margin:22px 0 2px;font-size:13px">${title}
-      <span class="muted" style="font-weight:400">${note}</span></h3>
-    <table>${rows}</table>`;
+  $('report-body').innerHTML = `
+    <p style="font-size:15px;margin:18px 0 0">${esc(pr.summary || '')}</p>
 
-  $('overview-config').innerHTML =
-    ((pr.transactions || []).length ? section(
-      `Transactions (${pr.transactions.length})`,
-      '— a page together with what it can change. Where regressions cost most.',
-      pr.transactions.map((t) => `<tr>
-        <td style="width:110px">${pill(t.criticality)}</td>
-        <td style="width:34px">${t.covered ? '<span class="pill pass">tested</span>' : ''}</td>
-        <td><strong>${esc(t.name)}</strong>
-          <div class="muted" style="font-size:12px">${esc(t.steps.join(' → '))}</div></td>
-        <td class="muted" style="width:38%">${esc(t.how_to_test)}</td>
-      </tr>`).join('')) : '')
-    +
-    ((pr.pages || []).length ? section(
-      `Pages (${pr.pages.length})`, '— what a user can navigate to.',
-      pr.pages.map((p) => `<tr>
-        <td style="width:110px">${pill(p.criticality)}</td>
-        <td style="width:34px">${p.covered ? '<span class="pill pass">tested</span>' : ''}</td>
-        <td class="mono">${esc(p.path)}</td>
-        <td class="muted">${p.reads} read · ${p.writes} write${p.behind_login ? ' · behind sign-in' : ''}</td>
-      </tr>`).join('')) : '')
-    +
-    ((pr.apis || []).length ? section(
-      `APIs (${pr.apis.length})`,
-      `— ${pr.apis.filter((a) => a.changes_data).length} of them change data.`,
-      pr.apis.slice(0, 40).map((a) => `<tr>
-        <td style="width:110px">${pill(a.criticality)}</td>
-        <td style="width:34px">${a.covered ? '<span class="pill pass">tested</span>' : ''}</td>
-        <td class="mono">${esc(a.methods.join('/'))} ${esc(a.path)}</td>
-        <td class="muted">${a.changes_data ? 'changes data' : 'read only'}</td>
-      </tr>`).join('')) : '');
+    ${needs.length ? `<div class="warnbox">
+      <strong>What TestTrout needs from you</strong>
+      <div class="muted" style="font-size:12.5px;margin-top:2px">Each of these unblocks tests.
+        Fill them in under <strong>Setup</strong>.</div>
+      ${needs.map((n) => `<div class="note">${esc(n)}</div>`).join('')}
+    </div>` : ''}
+
+    <div id="report-questions"></div>
+
+    ${d.has_changes ? `<h3 style="font-size:13px;margin:22px 0 0">Since your last scan</h3>
+      ${moved('New in the code', d.new_areas)}
+      ${moved('Now covered by a test', d.newly_covered)}
+      ${moved('No longer in the code', d.gone)}` : ''}
+
+    <h3 style="font-size:13px;margin:24px 0 2px">What needs testing
+      <span class="muted" style="font-weight:400">— ${missing.length} left, most worth doing
+      first. Covering a transaction usually covers its page and endpoints too.</span></h3>
+    ${missing.length ? `<table>${missing.slice(0, 25).map((m) => {
+      const [kind, ...rest] = m.split(' ');
+      return `<tr>
+        <td class="muted" style="width:110px">${esc(kind)}</td>
+        <td class="mono">${esc(rest.join(' '))}</td>
+      </tr>`; }).join('')}
+      ${missing.length > 25 ? `<tr><td colspan="2" class="muted">and ${missing.length - 25} more</td></tr>` : ''}
+      </table>
+      <div class="toolbar"><button class="action primary" data-goto="tests">Generate tests for these</button></div>`
+      : '<div class="note">Everything the scan found has a test.</div>'}
+
+    ${section('Transactions', pr.transactions, (t) => [
+      pill(t.criticality), t.covered,
+      `<strong>${esc(t.name)}</strong>
+       <div class="muted" style="font-size:12px">${esc((t.steps || []).join(' → '))}</div>`,
+      esc(t.how_to_test)])}
+    ${section('Pages', pr.pages, (x) => [
+      pill(x.criticality), x.covered, `<span class="mono">${esc(x.path)}</span>`,
+      `${x.reads} read · ${x.writes} write${x.behind_login ? ' · behind sign-in' : ''}`])}
+    ${section('APIs', pr.apis, (a) => [
+      pill(a.criticality), a.covered,
+      `<span class="mono">${esc((a.methods || []).join('/'))} ${esc(a.path)}</span>`,
+      a.changes_data ? 'changes data' : 'read only'])}`;
+
+  document.querySelectorAll('[data-goto]').forEach((b) => {
+    b.onclick = () => showTab(b.dataset.goto);
+  });
+  renderOpenQuestions();
 }
 
-function renderGaps() {
-  const gaps = (state.gaps || {}).gaps || [];
-  if (!gaps.length) { $('gaps-body').innerHTML = '<div class="empty">No gaps. Scan first.</div>'; return; }
-  $('gaps-body').innerHTML = `<table>
-    <tr><th>Criticality</th><th>Kind</th><th>What the test would assert</th><th>Score</th></tr>
-    ${gaps.map((g, i) => `
-      <tr class="clickable" onclick="toggle('gap${i}')">
-        <td>${pill(g.criticality)}</td>
-        <td class="muted">${esc(g.kind.replace(/_/g, ' '))}</td>
-        <td>${g.blockers?.length ? '<span class="pill warning">blocked</span> ' : ''}${esc(g.title)}</td>
-        <td class="mono muted">${g.score}</td>
-      </tr>
-      <tr id="gap${i}" style="display:none"><td colspan="4"><div class="detail">
-        <strong>Why it ranks here</strong>
-        <ul>${(g.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
-        ${g.blockers?.length ? `<div style="margin-top:8px"><strong>Blocked</strong><ul>${
-          g.blockers.map((b) => `<li>${esc(b.message)}</li>`).join('')}</ul></div>` : ''}
-      </div></td></tr>`).join('')}
-  </table>`;
+/**
+ * Questions that belong to the project rather than to one test.
+ *
+ * Anything raised against a scenario is answered next to that test, where the
+ * context is. What is left is about the project — a route that would not load,
+ * a behaviour nobody has stated — and it has nowhere else to go.
+ */
+function renderOpenQuestions() {
+  // Anything raised against a test is answered next to that test. Anything
+  // that is really a missing credential is already listed above and answered
+  // under Setup — repeating it here would be a third place to read the same
+  // sentence.
+  const open = ((state.questions || {}).open || []).filter(
+    (q) => !(q.subject || '').startsWith('scenario:') && q.kind !== 'missing_credential');
+  if (!open.length) { $('report-questions').innerHTML = ''; return; }
+
+  $('report-questions').innerHTML = `
+    <h3 style="font-size:13px;margin:24px 0 2px">Questions
+      <span class="muted" style="font-weight:400">— ${open.length}. Each takes a moment and
+      usually unblocks several tests.</span></h3>
+    <div class="stack">${open.map((q, i) => `
+      <div class="test ${q.blocks ? 'flagged' : ''}">
+        <div class="top">
+          <span class="pill ${q.blocks ? 'warning' : 'medium'}">${esc(q.label || q.kind)}</span>
+          <strong style="flex:1">${esc(q.text)}</strong>
+        </div>
+        ${q.context ? `<div class="why">${esc(q.context)}</div>` : ''}
+        ${q.unlocks ? `<div class="why" style="color:var(--accent)">unlocks: ${esc(q.unlocks)}</div>` : ''}
+        <div class="ask">
+          ${(q.choices || []).map((c) =>
+            `<button class="action" data-choice="${esc(q.id)}" data-text="${esc(c)}">${esc(c)}</button>`).join('')}
+          <input type="text" id="rq${i}" placeholder="your answer">
+          <button class="action primary" data-answer="${esc(q.id)}" data-input="rq${i}">Answer</button>
+          <button class="action" data-dismiss="${esc(q.id)}">Not relevant</button>
+        </div>
+      </div>`).join('')}</div>`;
+
+  document.querySelectorAll('[data-choice]').forEach((b) => {
+    b.onclick = () => submitAnswer(b.dataset.choice, b.dataset.text);
+  });
+  document.querySelectorAll('[data-answer]').forEach((b) => {
+    b.onclick = () => {
+      const value = $(b.dataset.input).value.trim();
+      if (value) submitAnswer(b.dataset.answer, value);
+    };
+  });
+  document.querySelectorAll('[data-dismiss]').forEach((b) => {
+    b.onclick = () => submitAnswer(b.dataset.dismiss, null, true);
+  });
 }
 
-function renderScenarios() {
-  const list = (state.scenarios || {}).scenarios || [];
-  if (!list.length) {
-    $('scenarios-body').innerHTML = '<div class="empty">No scenarios yet. Draft some from the Gaps tab.</div>';
+/** One collapsible inventory section. Collapsed by default — it is reference. */
+function section(title, rows, cells) {
+  if (!rows?.length) return '';
+  const id = `sec-${title.toLowerCase()}`;
+  return `
+    <h3 style="font-size:13px;margin:24px 0 2px;cursor:pointer" onclick="toggle('${id}')">
+      ${title} (${rows.length})
+      <span class="muted" style="font-weight:400">— ${rows.filter((r) => r.covered).length} tested. Show</span>
+    </h3>
+    <div id="${id}" style="display:none"><table>${rows.map((r) => {
+      const [level, covered, main, note] = cells(r);
+      return `<tr>
+        <td style="width:100px">${level}</td>
+        <td style="width:70px">${covered ? '<span class="pill pass">tested</span>' : ''}</td>
+        <td>${main}</td>
+        <td class="muted" style="width:34%">${note}</td>
+      </tr>`; }).join('')}</table></div>`;
+}
+
+// ---------------------------------------------------------------- tests
+
+let testFilter = 'all';
+
+function renderTests() {
+  const d = state.tests || {};
+  const all = d.tests || [];
+  const counts = d.counts || {};
+
+  if (!state.repoId) {
+    $('tests-body').innerHTML = '<div class="empty">No project yet.</div>';
+    $('test-filters').innerHTML = '';
     return;
   }
-  $('scenarios-body').innerHTML = `<table>
-    <tr><th>Status</th><th>Criticality</th><th>Asserts</th><th></th></tr>
-    ${list.map((s, i) => `
-      <tr class="clickable" onclick="toggle('sc${i}')">
-        <td>${pill(s.status)}</td>
-        <td>${pill(s.criticality)}</td>
-        <td>${esc(s.title)}${s.open_questions?.length
-          ? ` <span class="pill warning">${s.open_questions.length} question(s)</span>` : ''}</td>
-        <td onclick="event.stopPropagation()">
-          ${s.status === 'draft' ? `
-            <button class="action" onclick="setStatus('${esc(s.id)}','approved')">Approve</button>
-            <button class="action" onclick="setStatus('${esc(s.id)}','rejected')">Reject</button>` : ''}
-        </td>
-      </tr>
-      <tr id="sc${i}" style="display:none"><td colspan="4"><div class="detail">
-        ${s.open_questions?.length ? `<strong>Answer these first</strong><ul>${
-          s.open_questions.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>
-          <div class="muted" style="margin-top:6px">Edit <code>.trout/scenarios/${
-            esc(s.id.replace(/:/g, '_'))}.yaml</code> — the tool reads back what you write.</div>` : ''}
-        ${s.given?.length ? `<div style="margin-top:8px"><strong>Given</strong><ul>${
-          s.given.map((g) => `<li>${esc(g)}</li>`).join('')}</ul></div>` : ''}
-        <div style="margin-top:8px"><strong>Then</strong><ul>${
-          (s.then || []).map((a) => `<li>${esc(a.kind)}${a.expected ? ' → ' + esc(a.expected) : ''}
-            <span class="pill ${a.provenance === 'inferred' ? 'warning' : 'pass'}">${esc(a.provenance)}</span>
-            ${a.source ? `<div class="muted">${esc(a.source)}</div>` : ''}</li>`).join('') ||
-            '<li class="muted">no assertions</li>'}</ul></div>
-        ${s.emitted_to ? `<div class="muted mono" style="margin-top:8px">generated: ${esc(s.emitted_to)}</div>` : ''}
-      </div></td></tr>`).join('')}
-  </table>`;
-}
+  if (!all.length) {
+    $('test-filters').innerHTML = '';
+    $('tests-body').innerHTML = `<div class="empty">
+      No tests yet. Press <strong>Generate tests</strong> — each one is written and run
+      against your deployment as it is created, and you can watch it happen in
+      <strong>Progress</strong>.</div>`;
+    return;
+  }
 
-function renderSurfaces() {
-  const d = state.surfaces || {};
-  const list = d.surfaces || [];
-  if (!list.length) { $('surfaces-body').innerHTML = '<div class="empty">No scan yet.</div>'; return; }
-  $('surfaces-body').innerHTML = `
-    ${(d.warnings || []).length ? `<div class="warnbox"><strong>${d.warnings.length} warning(s)</strong>${
-      d.warnings.map((w) => `<div class="note">${esc(w.message)}</div>`).join('')}</div>` : ''}
-    <table>
-      <tr><th>Criticality</th><th>Kind</th><th>Id</th><th>Source</th></tr>
-      ${list.map((s, i) => `
-        <tr class="clickable" onclick="toggle('sf${i}')">
-          <td>${pill(s.criticality)}</td>
-          <td class="muted">${esc(s.kind.replace(/_/g, ' '))}</td>
-          <td class="mono">${esc(s.id)}</td>
-          <td class="mono muted">${esc(s.location?.file || '')}:${s.location?.line || ''}</td>
-        </tr>
-        <tr id="sf${i}" style="display:none"><td colspan="4"><div class="detail">
-          <ul>${(s.criticality_reasons || []).map((r) => `<li>${esc(r)}</li>`).join('') ||
-            '<li class="muted">no reasons recorded</li>'}</ul>
-        </div></td></tr>`).join('')}
-    </table>`;
-}
+  const buckets = [
+    ['all', 'All', all.length],
+    ['failing', 'Failing', counts.failing || 0],
+    ['needs_info', 'Needs you', counts.needs_info || 0],
+    ['blocked', 'Could not run', counts.blocked || 0],
+    ['untried', 'Not run yet', counts.untried || 0],
+    ['passing', 'Passing', counts.passing || 0],
+  ].filter(([key, , n]) => key === 'all' || n > 0);
 
-function renderRuns() {
-  const runs = (state.runs || {}).runs || [];
-  if (!runs.length) { $('runs-body').innerHTML = '<div class="empty">No runs yet. Press <strong>Run</strong>.</div>'; return; }
-  $('runs-body').innerHTML = runs.map((r, i) => `
-    <div class="card" style="margin-bottom:12px">
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        ${pill(r.status)}
-        <strong class="mono">${esc(r.id)}</strong>
-        <span class="muted">${esc(r.entrypoint)} · ${r.duration_seconds}s · isolation: ${esc(r.isolation)}</span>
-        <span style="flex:1"></span>
-        <button class="action" onclick="toggle('run${i}')">Details</button>
+  if (!buckets.some(([k]) => k === testFilter)) testFilter = 'all';
+  $('test-filters').innerHTML = buckets.map(([key, label, n]) =>
+    `<button class="action ${key === testFilter ? 'on' : ''}" data-filter="${key}">${label} ${n}</button>`
+  ).join('');
+  document.querySelectorAll('[data-filter]').forEach((b) => {
+    b.onclick = () => { testFilter = b.dataset.filter; renderTests(); };
+  });
+
+  const shown = testFilter === 'all' ? all : all.filter((t) => t.state === testFilter);
+  $('tests-body').innerHTML = `<div class="stack">${shown.map((t, i) => `
+    <div class="test ${t.state === 'passing' ? 'passing' : t.flagged ? 'flagged' : ''} ${
+      t.state === 'failing' ? 'failing' : ''}">
+      <div class="top">
+        <span class="pill ${stateClass(t.state)}">${esc(t.label)}</span>
+        <strong style="flex:1">${esc(t.title)}</strong>
+        <span class="pill ${esc(t.criticality)}">${esc(t.criticality)}</span>
+        <button class="action" onclick="toggle('td${i}')">Details</button>
       </div>
-      ${r.status === 'inconclusive' ? `<div class="warnbox" style="margin:10px 0 0">
-        This run says nothing about the product. Something prevented a reliable decision.</div>` : ''}
-      <div id="run${i}" style="display:none;margin-top:10px">
-        <table>
-          <tr><th>Result</th><th>Scenario</th><th>Detail</th></tr>
-          ${(r.results || []).map((x) => `<tr>
-            <td>${pill(x.classification)}</td>
-            <td class="mono">${esc(x.scenario_id.replace('scenario:', ''))}</td>
-            <td>${esc(x.message || '')}
-              ${x.evidence?.reproduce ? `<div class="muted mono">${esc(x.evidence.reproduce)}</div>` : ''}
-            </td></tr>`).join('')}
-        </table>
-        ${(r.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
+      ${t.detail ? `<div class="why ${t.state === 'failing' ? 'bad' : ''}">${esc(t.detail)}</div>` : ''}
+      ${t.questions.length ? `<div class="ask">
+        <input type="text" id="tq${i}" placeholder="${esc(t.questions[0])}">
+        <button class="action primary" data-test-answer="${esc(t.id)}" data-input="tq${i}">Answer</button>
+      </div>` : ''}
+      <div id="td${i}" style="display:none" class="detail">
+        ${t.questions.length > 1 ? `<strong>Also unanswered</strong><ul>${
+          t.questions.slice(1).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
+        <div class="muted" style="font-size:12px">
+          ${esc(t.kind.replace(/_/g, ' '))}${t.classification ? ' · last result: ' + esc(t.classification.replace(/_/g, ' ')) : ''}
+        </div>
+        ${t.reproduce ? `<div class="muted mono" style="font-size:11.5px;margin-top:6px">${esc(t.reproduce)}</div>` : ''}
+        ${t.emitted_to ? `<div class="muted mono" style="font-size:11.5px;margin-top:4px">${esc(t.emitted_to)}</div>`
+          : '<div class="muted" style="font-size:12px;margin-top:4px">no test code generated yet</div>'}
       </div>
-    </div>`).join('');
+    </div>`).join('')}</div>`;
+
+  document.querySelectorAll('[data-test-answer]').forEach((b) => {
+    b.onclick = () => {
+      const value = $(b.dataset.input).value.trim();
+      if (value) answerForTest(b.dataset.testAnswer, value);
+    };
+  });
 }
 
-function renderJobs() {
-  const jobs = (state.jobs || {}).jobs || [];
-  if (!jobs.length) { $('jobs-body').innerHTML = '<div class="empty">Nothing has run yet.</div>'; return; }
-  $('jobs-body').innerHTML = `<table>
-    <tr><th>State</th><th>Job</th><th>Duration</th><th>Detail</th></tr>
-    ${jobs.map((j, i) => `
-      <tr class="clickable" onclick="toggle('job${i}')">
-        <td>${pill(j.state === 'done' ? 'pass' : j.state === 'failed' ? 'fail' : j.state)}</td>
-        <td class="mono">${esc(j.kind)}</td>
-        <td class="muted">${j.duration_seconds != null ? j.duration_seconds + 's' : '—'}</td>
-        <td class="muted">${esc(j.error || (j.result ? JSON.stringify(j.result) : ''))}</td>
-      </tr>
-      <tr id="job${i}" style="display:none"><td colspan="4"><div class="detail">
-        ${(j.log || []).map((l) => `<div class="mono" style="font-size:12px">${esc(l)}</div>`).join('') ||
-          '<span class="muted">no output</span>'}
-      </div></td></tr>`).join('')}
-  </table>`;
-}
+const stateClass = (s) => ({ passing: 'pass', failing: 'fail', needs_info: 'warning',
+                             blocked: 'inconclusive', untried: 'skipped' }[s] || 'low');
 
+/**
+ * Answer a question raised against one test.
+ *
+ * The answer goes to the question queue if the question is tracked there, and
+ * to the scenario either way — the scenario file is what the next build reads.
+ */
+async function answerForTest(scenarioId, answer) {
+  const open = (state.questions || {}).open || [];
+  const match = open.find((q) => q.subject === scenarioId);
+  if (!match) {
+    alert('This one is recorded on the test itself. Edit its file under .trout/scenarios/ '
+          + '— the tool reads back what you write.');
+    return;
+  }
+  submitAnswer(match.id, answer);
+}
 
 let pendingSecrets = {};
 
@@ -849,6 +938,17 @@ function renderSetup() {
     <div class="toolbar">
       <button class="action primary" id="save-setup">Save</button>
       <span id="save-msg" class="muted"></span>
+    </div>
+
+    <div class="card" style="margin-top:22px">
+      <strong>Or drive it from your coding agent</strong>
+      <div class="muted" style="font-size:12.5px">Everything here is also typed MCP tools
+        and CLI commands. The server is bound to one project, so an agent cannot act on
+        the wrong repository.</div>
+      <pre>pip install 'testtrout[mcp]'
+trout mcp ${esc(((state.overview || {}).repo || {}).path || '/path/to/project')}</pre>
+      <div class="muted" style="font-size:12.5px">Or from the terminal:
+        <code>trout scan</code>, <code>trout build</code>, <code>trout run</code>.</div>
     </div>`;
 
   wireSetup();
@@ -961,56 +1061,6 @@ function wireSetup() {
   };
 }
 
-function renderQuestions() {
-  const d = state.questions || {};
-  const open = d.open || [];
-  if (!open.length) {
-    $('questions-body').innerHTML = (d.answered || []).length
-      ? '<div class="empty">Nothing outstanding. Everything TestTrout could not work out has been answered.</div>'
-      : '<div class="empty">No questions yet. Press <strong>Scan</strong> or <strong>Build tests</strong>.</div>';
-    return;
-  }
-
-  $('questions-body').innerHTML = `
-    <p class="muted">Things TestTrout could not work out on its own. Each takes a moment,
-       and each usually unblocks several tests.
-       ${open.filter((q) => q.blocks).length
-         ? `<strong>${open.filter((q) => q.blocks).length}</strong> are stopping tests from being
-            written at all — those first.` : ''}</p>
-    ${open.map((q, i) => `
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;gap:8px;align-items:baseline">
-          <span class="pill ${q.blocks ? 'warning' : 'medium'}">${esc(q.label || q.kind)}</span>
-          <strong style="flex:1">${esc(q.text)}</strong>
-        </div>
-        ${q.context ? `<div class="muted" style="font-size:12.5px;margin-top:6px">${esc(q.context)}</div>` : ''}
-        ${q.unlocks ? `<div style="font-size:12.5px;margin-top:4px;color:var(--accent)">unlocks: ${esc(q.unlocks)}</div>` : ''}
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          ${(q.choices || []).map((c) =>
-            `<button class="action" data-choice="${esc(q.id)}" data-text="${esc(c)}">${esc(c)}</button>`).join('')}
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px">
-          <input type="text" id="ans-${i}" placeholder="your answer"
-            style="flex:1;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
-          <button class="action primary" data-answer="${esc(q.id)}" data-input="ans-${i}">Answer</button>
-          <button class="action" data-dismiss="${esc(q.id)}">Not relevant</button>
-        </div>
-      </div>`).join('')}`;
-
-  document.querySelectorAll('[data-choice]').forEach((b) => {
-    b.onclick = () => submitAnswer(b.dataset.choice, b.dataset.text);
-  });
-  document.querySelectorAll('[data-answer]').forEach((b) => {
-    b.onclick = () => {
-      const value = $(b.dataset.input).value.trim();
-      if (value) submitAnswer(b.dataset.answer, value);
-    };
-  });
-  document.querySelectorAll('[data-dismiss]').forEach((b) => {
-    b.onclick = () => submitAnswer(b.dataset.dismiss, null, true);
-  });
-}
-
 async function submitAnswer(id, answer, dismiss) {
   try {
     await api(`/api/repos/${state.repoId}/questions/${encodeURIComponent(id)}`, {
@@ -1021,47 +1071,9 @@ async function submitAnswer(id, answer, dismiss) {
   } catch (e) { alert(e.message); }
 }
 
-function renderAgent() {
-  const repo = (state.overview || {}).repo || {};
-  $('agent-body').innerHTML = `
-    <p>The app is one way in. Everything here is also available as typed MCP tools
-       and as CLI commands, so anyone who would rather stay in their coding agent can.</p>
-    <h3 style="font-size:13px">Register the MCP server</h3>
-    <pre>pip install 'testtrout[mcp]'
-trout mcp ${esc(repo.path || '/path/to/project')}</pre>
-    <p class="muted">The server is bound to one project, so an agent cannot act on the
-       wrong repository.</p>
-    <h3 style="font-size:13px;margin-top:20px">Tools</h3>
-    <pre>scan  surfaces  gaps  intent  probe  propose
-scenarios  approve  generate  run  certify  report  doctor</pre>
-    <h3 style="font-size:13px;margin-top:20px">Resources</h3>
-    <pre>trout://surfaces   trout://intent   trout://config   trout://scenarios</pre>
-    <h3 style="font-size:13px;margin-top:20px">What to tell your agent</h3>
-    <div class="detail">
-      <ul>
-        <li>Read <code>status</code> before <code>results</code>. An
-            <code>inconclusive</code> run says nothing about the product.</li>
-        <li>Only <code>assertion_failure</code> is a product signal.</li>
-        <li>Quote a gap's <code>reasons</code> rather than re-deriving a ranking.</li>
-        <li>Never approve scenarios on the user's behalf.</li>
-        <li>Never mark a deployment disposable to make a run go green.</li>
-      </ul>
-    </div>`;
-}
-
 function toggle(id) {
   const el = $(id);
   el.style.display = el.style.display === 'none' ? '' : 'none';
-}
-
-async function setStatus(id, status) {
-  try {
-    await api(`/api/repos/${state.repoId}/scenarios/${encodeURIComponent(id)}/status`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    await loadRepo();
-  } catch (e) { alert(e.message); }
 }
 
 // ----------------------------------------------------------------- load
@@ -1081,22 +1093,32 @@ async function loadRepos() {
 async function loadRepo() {
   if (!state.repoId) { render(activeTab()); return; }
   const base = `/api/repos/${state.repoId}`;
-  const [overview, gaps, scenarios, surfaces, runs, jobs, config, questions, project] = await Promise.all([
+  const [overview, tests, jobs, config, questions, project] = await Promise.all([
     api(`${base}/overview`).catch(() => ({})),
-    api(`${base}/gaps`).catch(() => ({})),
-    api(`${base}/scenarios`).catch(() => ({})),
-    api(`${base}/surfaces`).catch(() => ({})),
-    api(`${base}/runs`).catch(() => ({})),
+    api(`${base}/tests`).catch(() => ({})),
     api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
     api(`${base}/config`).catch(() => ({})),
     api(`${base}/questions`).catch(() => ({})),
     api(`${base}/project`).catch(() => ({})),
   ]);
-  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config, questions, project });
+  Object.assign(state, { overview, tests, jobs, config, questions, project });
   render(activeTab());
 }
 
-const activeTab = () => document.querySelector('nav button.active').dataset.tab;
+async function loadTests() {
+  if (!state.repoId) return;
+  state.tests = await api(`/api/repos/${state.repoId}/tests`).catch(() => state.tests);
+  renderChrome();
+  if (activeTab() === 'tests') renderTests();
+}
+
+const activeTab = () => (document.querySelector('nav button[data-tab].active') || {}).dataset?.tab || 'report';
+
+/** Switch tabs from a link inside a panel. */
+function showTab(name) {
+  const button = document.querySelector(`nav button[data-tab="${name}"]`);
+  if (button) button.click();
+}
 
 (async () => { await loadRepos(); await loadRepo(); })();
 </script>

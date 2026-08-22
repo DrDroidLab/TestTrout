@@ -68,9 +68,14 @@ A scan starts automatically and answers three questions:
   one next thing it needs, never "configure it properly".
 - **What is untested?** Ranked, most worth doing first.
 
-Then press **Build tests**. Each test is written, run against your deployment, and kept
-only if it passes — a test nobody has run is a guess, and approving one is guessing
-twice. Anything that cannot be settled becomes a question rather than an assumption.
+Then press **Generate tests**. Each one is written, run against your deployment, and
+kept only if it passes — a test nobody has run is a guess, and approving one is guessing
+twice. You watch it happen a test at a time in the progress drawer, and anything that
+cannot be settled is flagged against the test it belongs to rather than assumed.
+
+The **Tests** tab is the whole state of the suite in one list: passing, failing, needs
+you, could not run. Failures come first, because a failure is the only thing here that
+might be a regression.
 
 Scan again whenever you like: the second scan reports what moved — new areas in the
 code, what the suite now covers, what is gone — rather than reprinting the same list.
