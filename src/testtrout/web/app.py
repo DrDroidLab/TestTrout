@@ -119,7 +119,12 @@ def create_app(database: Database | None = None) -> FastAPI:
 
     @app.post("/api/repos")
     def link_repo(payload: dict[str, Any]) -> dict[str, Any]:
-        """Link a local directory, or clone and link a GitHub repository."""
+        """Add a project: a repository, and the URL it is deployed at.
+
+        The deployment is recorded *before* the initial scan is queued. A scan
+        that runs without one can only read code; with one it can also probe
+        the running system, and probing is what turns a guess into evidence.
+        """
         source = payload.get("source", "local")
         try:
             if source == "github":
@@ -142,6 +147,18 @@ def create_app(database: Database | None = None) -> FastAPI:
             raise
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        deployment_url = str(payload.get("deployment_url", "")).strip()
+        if deployment_url:
+            from testtrout.app import settings
+
+            try:
+                settings.apply(
+                    QaPaths(root=Path(record.path)),
+                    {"entrypoints": [{"name": "deployment", "url": deployment_url}]},
+                )
+            except settings.SettingsError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # A freshly linked repository is useless until it is scanned.
         registry.queue_initial_scan(record)
@@ -338,6 +355,51 @@ def create_app(database: Database | None = None) -> FastAPI:
         scenario.status = ScenarioStatus(target)
         save(paths.scenarios, scenario)
         return scenario.model_dump(mode="json", exclude_none=True)
+
+    @app.get("/api/repos/{repo_id}/project")
+    def project(repo_id: int) -> dict[str, Any]:
+        """What this project is, in product language, and how much is tested."""
+        from testtrout.planning.overview import build as build_overview
+        from testtrout.planning.readiness import assess
+
+        paths = paths_for(repo_id)
+        scan = scan_of(paths)
+        if scan is None:
+            return {"scanned": False}
+
+        index, _ = scenarios_of(paths)
+        overview = build_overview(scan, index, assess(config_of(paths), scan))
+        coverage = overview.coverage
+
+        # Coverage moves every time a test is certified, so it is recomputed
+        # here rather than read back; the stored overview is the snapshot from
+        # the last scan and serves only as the "before" side. Practically that
+        # means ``delta.newly_covered`` answers "what has the suite gained
+        # since I last scanned", and ``still_missing`` answers "what is left" —
+        # which is the question a rescan is actually asking.
+        from testtrout.domain.overview import ProjectOverview
+        from testtrout.planning.overview import delta as compare
+
+        previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
+        changed = compare(previous, overview)
+
+        return {
+            "scanned": True,
+            "delta": changed.model_dump(mode="json") | {"has_changes": changed.has_changes},
+            "summary": overview.summary,
+            "stack": overview.stack,
+            "pages": [p.model_dump(mode="json") for p in overview.pages],
+            "apis": [a.model_dump(mode="json") for a in overview.apis],
+            "transactions": [t.model_dump(mode="json") for t in overview.transactions],
+            "needs_from_you": overview.needs_from_you,
+            "coverage": coverage.model_dump(mode="json")
+            | {
+                "pages_percent": coverage.pages_percent,
+                "apis_percent": coverage.apis_percent,
+                "transactions_percent": coverage.transactions_percent,
+                "overall_percent": coverage.overall_percent,
+            },
+        }
 
     # ----------------------------------------------------------- questions
 

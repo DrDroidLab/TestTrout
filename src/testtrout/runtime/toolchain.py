@@ -175,16 +175,29 @@ def write_configs(root: Path, timeout_seconds: int, report_dir: Path) -> list[st
     timeout_ms = max(timeout_seconds, 1) * 1000
 
     def project_relative(path: Path) -> str:
-        """Report paths, relative to the project root.
+        """A path relative to the project root.
 
-        Both runners resolve reporter output against the working directory, and
-        the runner always invokes them from the project root. Vitest resolves
-        `include` the same way — which is why the globs above are written from
-        the root rather than from this config's own directory.
+        Vitest resolves reporter output and `include` against the working
+        directory, and the runner always invokes it from the project root —
+        which is why the globs above are written from the root rather than
+        from this config's own directory.
         """
         import os
 
         return os.path.relpath(path, root).replace("\\", "/")
+
+    def config_relative(path: Path) -> str:
+        """A path relative to this config file's own directory.
+
+        Playwright is the exception: `outputFile` and `outputDir` resolve
+        against the directory holding the config, not the working directory.
+        Writing them from the root put every report and screenshot under
+        `tests/trout/.trout/`, where nothing looked for them — so a test that
+        ran and genuinely failed was reported as never having run.
+        """
+        import os
+
+        return os.path.relpath(path, directory).replace("\\", "/")
 
     written: list[str] = []
     for name, template, tokens in (
@@ -192,8 +205,8 @@ def write_configs(root: Path, timeout_seconds: int, report_dir: Path) -> list[st
             "playwright.config.ts",
             PLAYWRIGHT_CONFIG,
             {
-                "__REPORT__": project_relative(report_dir / "playwright.json"),
-                "__ARTIFACTS__": project_relative(report_dir / "artifacts"),
+                "__REPORT__": config_relative(report_dir / "playwright.json"),
+                "__ARTIFACTS__": config_relative(report_dir / "artifacts"),
             },
         ),
         (

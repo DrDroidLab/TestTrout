@@ -407,3 +407,63 @@ def test_the_generated_helper_refuses_writes_without_the_flag():
     assert "TROUT_ALLOW_WRITES" in SETUP_SOURCE
     assert "refusing to" in SETUP_SOURCE
     assert "guard(" in SETUP_SOURCE
+
+
+def test_playwright_report_paths_resolve_from_the_config_directory(tmp_path: Path):
+    """Playwright is the exception, and getting it wrong looked like a pass.
+
+    `outputFile` and `outputDir` resolve against the directory holding the
+    config, not the working directory. Written from the project root they put
+    every report and screenshot under `tests/trout/.trout/`, where nothing
+    looked for them — so a browser test that ran and genuinely failed came back
+    as "the test did not run", which is inconclusive rather than a failure.
+    """
+    from testtrout.runtime import toolchain
+
+    toolchain.write_configs(tmp_path, timeout_seconds=30, report_dir=tmp_path / ".trout/runs/x")
+    config = (tmp_path / "tests/trout/playwright.config.ts").read_text(encoding="utf-8")
+
+    assert "outputFile: '../../.trout/runs/x/playwright.json'" in config
+    assert "outputDir: '../../.trout/runs/x/artifacts'" in config
+
+
+def test_vitest_report_path_resolves_from_the_project_root(tmp_path: Path):
+    """Vitest resolves reporter output against the working directory instead.
+
+    The runner always invokes it from the project root, so this one stays
+    root-relative — the same reason its `include` globs are written that way.
+    """
+    from testtrout.runtime import toolchain
+
+    toolchain.write_configs(tmp_path, timeout_seconds=30, report_dir=tmp_path / ".trout/runs/x")
+    config = (tmp_path / "tests/trout/vitest.config.ts").read_text(encoding="utf-8")
+
+    assert "outputFile: '.trout/runs/x/vitest.json'" in config
+
+
+def test_the_browser_helper_exports_everything_a_generated_test_imports(tmp_path: Path):
+    """A missing export made every browser test fail before it started.
+
+    `installSubstitutions` was imported by every generated spec and never
+    written, so Playwright reported "No tests found" and the failure was
+    classified as inconclusive rather than as the setup problem it was.
+    """
+    import re
+
+    from testtrout.authoring.emitters.playwright import SETUP_PATH, PlaywrightEmitter
+
+    scenario = Scenario(
+        id="scenario:screen_home",
+        title="/ loads",
+        kind=TestKind.BROWSER_JOURNEY,
+        status=ScenarioStatus.APPROVED,
+    )
+    emitted = PlaywrightEmitter().emit(scenario, Config())
+    helper = emitted.shared[SETUP_PATH]
+
+    imported = set(re.findall(r"import \{([^}]*)\} from '\.\./_browser'", emitted.content))
+    names = {name.strip() for group in imported for name in group.split(",") if name.strip()}
+    assert names, "the generated spec should import from the shared helper"
+
+    exported = set(re.findall(r"export async function (\w+)", helper))
+    assert names <= exported, f"imported but not exported: {sorted(names - exported)}"

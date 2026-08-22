@@ -55,15 +55,20 @@ pip install testtrout
 trout up
 ```
 
-Storage, worker, and interface, all local. Link a repository from the page, or:
+Storage, worker, and interface, all local. Add a project from the page, or:
 
 ```bash
-trout link ~/code/my-app          # local folder, never modified
-trout link --github owner/name    # cloned into ~/.testtrout/repos
+trout link ~/code/my-app --url https://my-app.vercel.app     # never modified
+trout link --github owner/name --url https://my-app.vercel.app
 ```
 
-A scan runs automatically on link. The rest of this document is the same workflow
-from the terminal, plus what to do when a step fails.
+Pass `--url` now if you can. A scan runs automatically, and without a deployment it can
+only read code; with one it can also check what the running system actually does. You
+can add it later with `trout init --url <url>`, but the first scan will have been the
+poorer for it. The deployment is read-only until you mark it disposable.
+
+The rest of this document is the same workflow from the terminal, plus what to do when
+a step fails.
 
 **Storage lives in two places, on purpose.** Your scenario specs and generated tests
 stay in the repository — committed, reviewable in a pull request, moving with a branch.
@@ -514,7 +519,7 @@ model:
 | `trout certify` | generated tests | Prove scenarios are deterministic |
 | `trout report` | a run | Results and evidence |
 | `trout up` | — | Start storage, worker, and interface |
-| `trout link` | — | Link a local folder or clone from GitHub |
+| `trout link` | `--url`, `--github`, `--name` | Add a project: a local folder or a GitHub clone, plus where it is deployed |
 | `trout repos` | — | List linked repositories |
 | `trout worker` | — | Standalone worker |
 | `trout plan` | — | What is possible, and what is missing |

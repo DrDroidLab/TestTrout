@@ -72,6 +72,54 @@ export async function signIn(page: Page, role: string): Promise<void> {
 }
 
 /**
+ * Refuse to let a browser test reach a real third-party service.
+ *
+ * A test that quietly charges a real card, sends a real email, or calls a
+ * vendor's production API is worse than a test that fails: the damage is done
+ * before anyone reads the report. So every request to a substituted host is
+ * intercepted, and the default for one that matches no contract is to fail the
+ * test rather than let it through — a mock that silently matches nothing is
+ * how a suite starts reporting green while testing nothing.
+ *
+ * Hosts come from `substitution.external` in .trout/config.yaml, which
+ * `trout scan` populates from the vendors it finds in your source.
+ */
+export async function installSubstitutions(page: Page): Promise<void> {
+  const hosts = (process.env.TROUT_SUBSTITUTE_HOSTS || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+  if (hosts.length === 0) {
+    return;
+  }
+
+  const policy = process.env.TROUT_ON_UNMATCHED_REQUEST || 'fail';
+  await page.route('**/*', async (route) => {
+    let host: string;
+    try {
+      host = new URL(route.request().url()).hostname;
+    } catch {
+      return route.continue();
+    }
+    // Suffix match so api.stripe.com covers its subdomains, but example.com
+    // never matches notexample.com.
+    const matched = hosts.some((h) => host === h || host.endsWith(`.${h}`));
+    if (!matched) {
+      return route.continue();
+    }
+
+    if (policy === 'passthrough') {
+      return route.continue();
+    }
+    if (policy === 'record') {
+      console.warn(`[trout] unmatched third-party request to ${host}`);
+      return route.continue();
+    }
+    return route.abort('blockedbyclient');
+  });
+}
+
+/**
  * Text that identifies the rows a signed-in user can see on a screen.
  *
  * Used by authorization tests: what one account can see, another must not.

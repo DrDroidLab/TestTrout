@@ -258,3 +258,72 @@ def test_readiness_degrades_rather_than_refusing(client: TestClient):
     assert by_name["api_tests"]["ready"] is True
     assert by_name["authorization_tests"]["ready"] is False
     assert by_name["authorization_tests"]["next_step"]
+
+
+def test_a_project_is_added_with_its_deployment_in_one_step(tmp_path: Path, database: Database):
+    """The URL must be on file *before* the first scan is queued.
+
+    A scan without a deployment can only read code. With one it can also check
+    what the running system does, and that is the difference between a guess
+    and evidence — so asking for the URL afterwards would waste the first scan.
+    """
+    other = tmp_path / "second"
+    shutil.copytree(FIXTURE, other)
+    (other / ".git").mkdir()
+    api = TestClient(create_app(database=database))
+
+    response = api.post(
+        "/api/repos",
+        json={"source": "local", "path": str(other), "deployment_url": "https://example.test"},
+    )
+    assert response.status_code == 200
+    repo_id = response.json()["id"]
+
+    config = api.get(f"/api/repos/{repo_id}/config").json()["config"]
+    assert [e["url"] for e in config["entrypoints"]] == ["https://example.test"]
+    # Read-only until the user says otherwise, however it was added.
+    assert config["entrypoints"][0]["disposable"] is False
+    assert [j["kind"] for j in api.get("/api/jobs").json()["jobs"]] == ["scan"]
+
+
+def test_a_project_added_without_a_deployment_still_links(tmp_path: Path, database: Database):
+    """A URL is worth asking for, not worth blocking on."""
+    other = tmp_path / "third"
+    shutil.copytree(FIXTURE, other)
+    (other / ".git").mkdir()
+    api = TestClient(create_app(database=database))
+
+    response = api.post("/api/repos", json={"source": "local", "path": str(other)})
+    assert response.status_code == 200
+    config = api.get(f"/api/repos/{response.json()['id']}/config").json()["config"]
+    assert config["entrypoints"] == []
+
+
+def test_the_project_account_is_empty_before_a_scan(client: TestClient):
+    assert client.get("/api/repos/1/project").json() == {"scanned": False}
+
+
+def test_the_project_account_describes_the_product(client: TestClient, database: Database):
+    assert client.post("/api/repos/1/jobs", json={"kind": "scan"}).status_code == 200
+    drain(database)
+
+    body = client.get("/api/repos/1/project").json()
+    assert body["scanned"] is True
+    assert body["summary"]
+    assert body["pages"]
+    assert all(page["how_to_test"] for page in body["pages"])
+
+    coverage = body["coverage"]
+    assert coverage["overall_percent"] == 0
+    assert coverage["pages_total"] == len(body["pages"])
+
+
+def test_a_scan_says_what_is_left_to_test(client: TestClient, database: Database):
+    """The answer to "I scanned again — now what?"."""
+    assert client.post("/api/repos/1/jobs", json={"kind": "scan"}).status_code == 200
+    drain(database)
+
+    body = client.get("/api/repos/1/project").json()
+    missing = body["delta"]["still_missing"]
+    assert len(missing) == len(body["pages"]) + len(body["apis"]) + len(body["transactions"])
+    assert body["delta"]["gone"] == []

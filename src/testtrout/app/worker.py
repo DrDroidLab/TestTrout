@@ -25,6 +25,7 @@ from testtrout.app.repos import RepoRegistry
 from testtrout.domain.config import Config
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import ProbeResult
+from testtrout.domain.overview import ProjectOverview
 from testtrout.domain.scenario import ScenarioIndex, ScenarioStatus
 from testtrout.domain.surface import ScanResult
 from testtrout.store import QaPaths, apply_scan, load_dotenv, read_model, write_model
@@ -128,6 +129,8 @@ def handle_scan(context: JobContext) -> dict[str, Any]:
     if raised:
         context.log(f"{raised} new question(s) for you — see Questions")
 
+    changed = _record_overview(context)
+
     gaps = _gap_summary(context)
     context.log(f"{gaps['total']} test(s) worth writing — {gaps['ready']} can be drafted now")
     for line in gaps["headline"]:
@@ -139,7 +142,52 @@ def handle_scan(context: JobContext) -> dict[str, Any]:
         "probed": probed,
         "gaps": gaps["total"],
         "ready": gaps["ready"],
+        "delta": changed,
     }
+
+
+def _record_overview(context: JobContext) -> dict[str, Any]:
+    """Describe the product, and say what moved since the last time.
+
+    The second scan is where this tool either earns its place or does not. A
+    rescan that reprints the same forty untested things tells you nothing; one
+    that says "three of those now have tests, and there is a new page" tells
+    you where you are.
+    """
+    from testtrout.planning.overview import build as build_overview
+    from testtrout.planning.overview import delta as compare
+    from testtrout.planning.readiness import assess
+
+    paths = context.paths
+    previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
+    index, _ = context.scenarios()
+    scan = context.scan_result()
+    current = build_overview(scan, index, assess(context.config(), scan))
+    write_model(paths.overview, current)
+
+    changed = compare(previous, current)
+    if previous is None:
+        context.log(current.summary)
+    elif changed.has_changes:
+        for label, items in (
+            ("new since last scan", changed.new_areas),
+            ("now covered", changed.newly_covered),
+            ("no longer in the code", changed.gone),
+        ):
+            if items:
+                context.log(f"{label}: {len(items)}")
+                for item in items[:5]:
+                    context.log(f"  {item}")
+    else:
+        context.log("nothing changed since the last scan")
+
+    coverage = current.coverage
+    context.log(
+        f"coverage {coverage.overall_percent}% — "
+        f"transactions {coverage.transactions_percent}%, "
+        f"pages {coverage.pages_percent}%, apis {coverage.apis_percent}%"
+    )
+    return changed.model_dump(mode="json")
 
 
 def _gap_summary(context: JobContext) -> dict[str, Any]:
@@ -372,144 +420,31 @@ def handle_run(context: JobContext) -> dict[str, Any]:
 def handle_build(context: JobContext) -> dict[str, Any]:
     """Draft tests and prove them against the deployment before keeping any.
 
-    This is where validation replaces approval as the gate. Asking someone to
-    approve a test nobody has run is asking them to guess; a test that
-    demonstrably passes against a working deployment has earned its place. What
-    is left for a person is the part only they can do — answering what the tool
-    could not determine.
-
-    A drafted test therefore ends in one of three states: proven and kept,
-    failed and held back with the failure attached as a question, or never run
-    because something about it was ambiguous from the start.
+    The work itself lives in :mod:`testtrout.authoring.build`, shared with
+    ``trout build`` so the button and the command cannot drift apart.
     """
-    from testtrout.authoring import propose as authoring
-    from testtrout.authoring.base import select_emitter
-    from testtrout.authoring.store import save
-    from testtrout.domain.scenario import ScenarioStatus
+    from testtrout.authoring.build import build_suite
     from testtrout.llm.gateway import Gateway
-    from testtrout.planning import gaps as planner
-    from testtrout.planning.existing_tests import detect
-    from testtrout.runtime.runner import run as execute
 
-    scan = context.scan_result()
     config = context.config()
     entrypoint = config.entrypoint(context.options.get("entrypoint"))
     if entrypoint is None:
         raise RuntimeError("no deployment is configured — add one under Setup")
 
-    index, _ = context.scenarios()
-    gap_map = planner.build(
-        scan,
+    outcome = build_suite(
+        context.paths,
+        config,
+        context.scan_result(),
+        entrypoint,
         intent=context.intent(),
         probe=context.probe_result(),
-        existing=detect(context.paths.root, scan),
-        roles=[u.role for u in config.test_users],
-        scenarios=index,
+        gateway=(
+            None if context.options.get("no_model") else Gateway(config.model, context.paths.cache)
+        ),
+        limit=int(context.options.get("limit", 5)),
+        log=context.log,
     )
-    limit = int(context.options.get("limit", 5))
-    candidates = gap_map.ranked(ready_only=True)[:limit]
-    if not candidates:
-        context.log("nothing new to build — every ready area already has a test")
-        return {"drafted": 0, "kept": 0, "held": 0}
-
-    gateway = (
-        None if context.options.get("no_model") else Gateway(config.model, context.paths.cache)
-    )
-    context.paths.ensure()
-
-    drafted: list[str] = []
-    unclear: list[str] = []
-    for candidate in candidates:
-        context.log(f"drafting: {candidate.title}")
-        scenario, warnings = authoring.propose(
-            candidate,
-            scan,
-            config,
-            probe=context.probe_result(),
-            intent=context.intent(),
-            gateway=gateway,
-        )
-        for warning in warnings:
-            context.log(f"  {warning}")
-
-        if scenario.open_questions:
-            # Held back deliberately: a test built on a guess is worse than no
-            # test, and the guess is exactly what a person can settle quickly.
-            scenario.status = ScenarioStatus.DRAFT
-            unclear.append(scenario.id)
-            context.log("  needs an answer before this can be trusted")
-        else:
-            scenario.status = ScenarioStatus.APPROVED
-            drafted.append(scenario.id)
-        save(context.paths.scenarios, scenario)
-
-    kept: list[str] = []
-    held: list[str] = []
-    if drafted:
-        index, _ = context.scenarios()
-        emitted = 0
-        for scenario in index.scenarios:
-            if scenario.id not in drafted:
-                continue
-            emitter = select_emitter(scenario)
-            if emitter is None:
-                continue
-            output = emitter.emit(scenario, config)
-            destination = context.paths.root / output.path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(output.content, encoding="utf-8")
-            for rel, content in output.shared.items():
-                shared_path = context.paths.root / rel
-                shared_path.parent.mkdir(parents=True, exist_ok=True)
-                shared_path.write_text(content, encoding="utf-8")
-            scenario.emitted_to = output.path
-            save(context.paths.scenarios, scenario)
-            emitted += 1
-
-        context.log(f"trying {emitted} new test(s) against {entrypoint.url}")
-        index, _ = context.scenarios()
-        record = execute(
-            config,
-            entrypoint,
-            index,
-            context.paths.root,
-            report_dir=context.paths.runs / "build",
-            only=drafted,
-        )
-        for note in record.notes:
-            context.log(note)
-
-        by_id = {r.scenario_id: r for r in record.results}
-        for scenario in index.scenarios:
-            if scenario.id not in drafted:
-                continue
-            result = by_id.get(scenario.id)
-            if result is not None and result.passed:
-                scenario.status = ScenarioStatus.CERTIFIED
-                kept.append(scenario.id)
-                context.log(f"  kept: {scenario.title}")
-            else:
-                scenario.status = ScenarioStatus.DRAFT
-                held.append(scenario.id)
-                detail = result.message if result else "the test did not run"
-                scenario.open_questions.append(
-                    f"This test did not pass against {entrypoint.name}: {detail}. "
-                    "Is the expectation wrong, or is this a real problem?"
-                )
-                context.log(f"  held back: {scenario.title} — {detail[:60]}")
-            save(context.paths.scenarios, scenario)
-
-    raised = _refresh_questions(context)
-    context.log(
-        f"{len(kept)} test(s) proven against your deployment, "
-        f"{len(held) + len(unclear)} need your input"
-    )
-    return {
-        "drafted": len(drafted) + len(unclear),
-        "kept": len(kept),
-        "held": len(held) + len(unclear),
-        "questions": raised,
-    }
+    return outcome.as_dict() | {"questions": _refresh_questions(context)}
 
 
 def _refresh_questions(context: JobContext) -> int:

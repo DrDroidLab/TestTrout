@@ -99,28 +99,37 @@ def test_an_explicit_path_is_never_second_guessed(tmp_path: Path):
 
 
 def test_no_user_facing_string_names_a_command_that_does_not_exist():
-    """Regression guard for the rename.
+    """Regression guard for text that tells users to run something.
 
-    68 strings across the CLI, MCP server, web UI, and generated file headers
-    told users to run `qa …` after the binary became `trout`. Every one of them
-    named a command that does not exist, and nothing caught it because they are
-    all just strings.
+    Twice now a string has told users to run a command that does not exist:
+    68 `qa …` references survived the rename to `trout`, and later a scan
+    printed "next: `trout build`" months before that command was written.
+    Nothing caught either, because they are all just strings.
+
+    So the check is against the real command table rather than a list of names
+    written down here, which would go stale the same way.
     """
     import re
 
+    from testtrout.cli.main import app as cli
+
+    known = {command.name or command.callback.__name__ for command in cli.registered_commands}
+    assert "scan" in known, "command table looks wrong; the guard would pass vacuously"
+
     source = Path(__file__).resolve().parents[2] / "src" / "testtrout"
-    stale = re.compile(
-        r"\bqa (?=scan|init|probe|intent|gaps|propose|approve|generate|run|"
-        r"certify|report|doctor|web|mcp|surfaces|scenarios|providers)"
-    )
+    # Only inside backticks. That is how every instruction in this codebase is
+    # written, and it keeps prose like ".trout initialised" out of the results
+    # without a stopword list that would go stale on its own.
+    reference = re.compile(r"`(?:trout|qa) ([a-z][a-z-]+)")
     offenders = [
-        f"{path.relative_to(source)}:{number}"
+        f"{path.relative_to(source)}:{number}: {name}"
         for path in source.rglob("*")
         if path.is_file() and path.suffix in {".py", ".html", ".md"}
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if stale.search(line)
+        for name in reference.findall(line)
+        if name not in known
     ]
-    assert offenders == [], f"stale `qa` command references: {offenders}"
+    assert offenders == [], f"references to commands that do not exist: {offenders}"
 
 
 def test_an_app_in_a_subdirectory_is_found(tmp_path: Path):

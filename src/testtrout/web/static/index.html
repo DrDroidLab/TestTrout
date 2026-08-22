@@ -172,7 +172,7 @@
   <h1>🐟 TestTrout</h1>
   <div class="repopicker">
     <select class="repo" id="repo-select"></select>
-    <button class="action" id="link-btn">Link repo</button>
+    <button class="action" id="link-btn">Add project</button>
   </div>
   <span class="spacer"></span>
   <span id="safety"></span>
@@ -234,26 +234,33 @@
 </main>
 
 <dialog id="link-dialog">
-  <h3>Link a repository</h3>
+  <h3>Add a project</h3>
   <p class="muted" style="font-size:13px;margin:0">
-    A local directory is linked in place and never modified. A GitHub repository
-    is cloned into <code>~/.testtrout/repos</code> first.
+    A repository and the URL it is deployed at. The folder is never modified;
+    a GitHub repository is cloned into <code>~/.testtrout/repos</code> first.
   </p>
   <div class="tabs">
     <button class="action" data-link-tab="local">Local folder</button>
     <button class="action" data-link-tab="github">GitHub</button>
   </div>
   <div id="link-local">
-    <input type="text" id="link-path" placeholder="/path/to/your/project" autocomplete="off">
+    <input type="text" id="link-path" placeholder="/path/to/your/repository" autocomplete="off">
   </div>
   <div id="link-github" style="display:none">
     <div id="gh-status" class="muted" style="font-size:13px"></div>
     <div class="repolist" id="gh-repos"></div>
   </div>
+  <input type="text" id="link-url" placeholder="https://your-app.vercel.app  (deployment URL)"
+         autocomplete="off" style="margin-top:10px">
+  <div class="muted" style="font-size:12px;margin-top:6px">
+    Both halves matter: the repository says what your product is supposed to do,
+    the deployment says what it actually does. Read-only until you mark it
+    disposable under Setup.
+  </div>
   <div class="toolbar" style="margin-bottom:0">
     <span class="spacer" style="flex:1"></span>
     <button class="action" id="link-cancel">Cancel</button>
-    <button class="action primary" id="link-confirm">Link</button>
+    <button class="action primary" id="link-confirm">Add project</button>
   </div>
 </dialog>
 
@@ -367,6 +374,7 @@ $('link-confirm').onclick = async () => {
   const body = usingGithub
     ? { source: 'github', slug: selectedRemote }
     : { source: 'local', path: $('link-path').value.trim() };
+  body.deployment_url = $('link-url').value.trim();
   try {
     const repo = await api('/api/repos', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -455,116 +463,123 @@ function render(tab) {
 
 function renderOverview() {
   const o = state.overview || {};
+  const pr = state.project || {};
   const w = (o.entrypoints || []).filter((e) => e.writable);
   $('safety').innerHTML = !state.repoId ? ''
     : (o.entrypoints || []).length === 0
-      ? '<span class="pill low">no deployment configured</span>'
-      : w.length ? `<span class="pill high">${w.length} writable deployment(s)</span>`
-                 : '<span class="pill pass">all deployments read-only</span>';
-
-  if (!state.repoId) {
-    $('cards').innerHTML = '';
-    $('overview-notes').innerHTML =
-      '<div class="empty">No repository linked yet. Press <strong>Link repo</strong> to start.</div>';
-    $('overview-config').innerHTML = '';
-    return;
-  }
-  if (!o.scanned) {
-    $('cards').innerHTML = '';
-    $('overview-notes').innerHTML =
-      '<div class="empty">Not scanned yet. Press <strong>Scan</strong>.</div>';
-    $('overview-config').innerHTML = '';
-    return;
-  }
-  if (o.scan_empty) {
-    // Rendering zeros silently is how a stale or failed scan looks like a
-    // working tool with nothing to say.
-    $('cards').innerHTML = '';
-    $('overview-config').innerHTML = '';
-    $('overview-notes').innerHTML = `<div class="warnbox">
-      <strong>This scan found nothing.</strong>
-      <div class="note">${o.scan_stale
-        ? 'It was produced by an older version of TestTrout. Press <strong>Scan</strong> to run it again.'
-        : 'Either this is not a supported stack, or the app lives somewhere the scan did not look. ' +
-          'Supported: React + Vite, or Next.js App Router, in TypeScript.'}</div>
-      <div class="note">Detected: <code>${esc(o.project?.framework || 'unknown')}</code>
-        ${(o.project?.detected_from || []).length
-          ? '— ' + esc(o.project.detected_from.join('; ')) : '— no evidence found'}</div>
-    </div>`;
-    return;
-  }
-
-  const c = o.coverage || {};
-  const s = o.scenarios || {};
-  const hist = o.history || [];
-  const last = hist[0];
-  const colours = { pass: 'var(--pass)', fail: 'var(--fail)',
-                    warning: 'var(--warn)', inconclusive: 'var(--incon)' };
-
-  $('cards').innerHTML = `
-    <div class="card">
-      <div class="label">Surface coverage</div>
-      <div class="value">${c.percent ?? 0}%</div>
-      <div class="bar"><div style="width:${c.percent ?? 0}%"></div></div>
-      <div class="sub">${c.covered_surfaces ?? 0} of ${c.total_surfaces ?? 0} surfaces</div>
-    </div>
-    <div class="card">
-      <div class="label">Critical coverage</div>
-      <div class="value">${c.critical_percent ?? 0}%</div>
-      <div class="bar"><div style="width:${c.critical_percent ?? 0}%"></div></div>
-      <div class="sub">${c.critical_covered ?? 0} of ${c.critical_total ?? 0} critical surfaces</div>
-    </div>
-    <div class="card">
-      <div class="label">Policies covered</div>
-      <div class="value">${c.policies_covered ?? 0}<span class="muted" style="font-size:16px">/${c.policies_total ?? 0}</span></div>
-      <div class="sub">${o.authorization_possible ? 'authorization tests possible' : 'needs a second test user'}</div>
-    </div>
-    <div class="card">
-      <div class="label">Gaps</div>
-      <div class="value">${o.gap_total ?? 0}</div>
-      <div class="sub">${o.gap_ready ?? 0} ready to draft</div>
-    </div>
-    <div class="card">
-      <div class="label">Scenarios</div>
-      <div class="value">${Object.values(s).reduce((a, b) => a + b, 0)}</div>
-      <div class="sub">${Object.entries(s).map(([k, v]) => `${v} ${k}`).join(' · ') || 'none yet'}</div>
-    </div>
-    <div class="card">
-      <div class="label">Last run</div>
-      <div class="value">${last ? pill(last.status) : '<span class="muted" style="font-size:16px">never</span>'}</div>
-      <div class="spark">${hist.slice(0, 20).reverse().map((h) =>
-        `<i style="height:${Math.max(6, Math.min(26, (h.duration_seconds || 1) * 2))}px;` +
-        `background:${colours[h.status] || 'var(--border)'}" title="${esc(h.run_id)} ${esc(h.status)}"></i>`).join('')}</div>
-      <div class="sub">${hist.length} run(s) recorded</div>
-    </div>`;
+      ? '<span class="pill low">no deployment</span>'
+      : w.length ? `<span class="pill high">${w.length} writable</span>`
+                 : '<span class="pill pass">read-only</span>';
 
   const openCount = o.open_questions || 0;
   $('q-badge').innerHTML = openCount
     ? `<span class="pill warning" style="margin-left:4px">${openCount}</span>` : '';
 
-  $('overview-notes').innerHTML = (o.notes || []).length
-    ? `<div class="warnbox"><strong>What would make this better</strong>` +
-      (o.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join('') + '</div>'
-    : '';
+  if (!state.repoId) {
+    $('cards').innerHTML = '';
+    $('overview-notes').innerHTML =
+      '<div class="empty">No project yet. Press <strong>Add project</strong> to start.</div>';
+    $('overview-config').innerHTML = '';
+    return;
+  }
+  if (!pr.scanned) {
+    $('cards').innerHTML = '';
+    $('overview-notes').innerHTML =
+      '<div class="empty">Press <strong>Scan</strong> to find out what this project does.</div>';
+    $('overview-config').innerHTML = '';
+    return;
+  }
 
-  const repo = o.repo || {};
-  $('overview-config').innerHTML = `
-    <h3 style="margin:22px 0 0;font-size:13px">Configuration</h3>
-    <table>
-      <tr><td class="muted" style="width:190px">Repository</td><td>${esc(repo.name || '')}
-        <span class="mono muted">${esc(repo.path || '')}</span>
-        ${repo.remote ? `<span class="pill low">${esc(repo.remote)}</span>` : ''}</td></tr>
-      <tr><td class="muted">Project</td><td>${esc(o.project?.framework || '?')}${o.project?.backend ? ' + ' + esc(o.project.backend) : ''}</td></tr>
-      <tr><td class="muted">Deployments</td><td>${(o.entrypoints || []).map((e) =>
-        `<div>${esc(e.name)} <span class="mono muted">${esc(e.url)}</span> ${e.writable
-          ? '<span class="pill high">writable</span>'
-          : '<span class="pill pass">read-only</span>'}</div>`).join('') || '<span class="muted">none — run <code>trout init</code></span>'}</td></tr>
-      <tr><td class="muted">Test users</td><td>${(o.test_users || []).join(', ') || '<span class="muted">none</span>'}</td></tr>
-      <tr><td class="muted">Database isolation</td><td>${esc(o.isolation || '')}</td></tr>
-      <tr><td class="muted">Blocked third parties</td><td class="mono">${(o.substitution || []).map((x) => esc(x.match)).join(', ') || '<span class="muted">none detected</span>'}</td></tr>
-      <tr><td class="muted">Model provider</td><td>${esc(o.model?.provider || '')} <span class="muted">${esc(o.model?.model || '')}</span></td></tr>
-      <tr><td class="muted">Probe</td><td>${o.probe ? `${o.probe.reachable}/${o.probe.total} screens reachable · ${o.probe.divergences} divergence(s)` : '<span class="muted">not probed</span>'}</td></tr>
-    </table>`;
+  const c = pr.coverage || {};
+  const bar = (label, pct, covered, total) => `
+    <div class="card">
+      <div class="label">${label}</div>
+      <div class="value">${pct ?? 0}%</div>
+      <div class="bar"><div style="width:${pct ?? 0}%"></div></div>
+      <div class="sub">${covered ?? 0} of ${total ?? 0} tested</div>
+    </div>`;
+
+  $('cards').innerHTML =
+    bar('Transactions', c.transactions_percent, c.transactions_covered, c.transactions_total) +
+    bar('Pages', c.pages_percent, c.pages_covered, c.pages_total) +
+    bar('APIs', c.apis_percent, c.apis_covered, c.apis_total) +
+    `<div class="card">
+       <div class="label">Tests</div>
+       <div class="value">${Object.values(o.scenarios || {}).reduce((a, b) => a + b, 0)}</div>
+       <div class="sub">${Object.entries(o.scenarios || {}).map(([k, v]) => `${v} ${k}`).join(' · ') || 'none yet'}</div>
+     </div>
+     <div class="card">
+       <div class="label">Questions</div>
+       <div class="value">${openCount}</div>
+       <div class="sub">${openCount ? 'answering these unblocks tests' : 'nothing outstanding'}</div>
+     </div>`;
+
+  const d = pr.delta || {};
+  const changeList = (label, items) => !items?.length ? '' : `
+    <div class="note"><strong>${label}</strong>
+      ${items.slice(0, 6).map((i) => `<div class="mono" style="font-size:12px">${esc(i)}</div>`).join('')}
+      ${items.length > 6 ? `<div class="muted" style="font-size:12px">and ${items.length - 6} more</div>` : ''}
+    </div>`;
+
+  $('overview-notes').innerHTML = `
+    <p style="font-size:15px;margin-top:18px">${esc(pr.summary || '')}</p>
+    ${(pr.needs_from_you || []).length ? `<div class="warnbox">
+      <strong>What TestTrout still needs from you</strong>
+      ${pr.needs_from_you.map((n) => `<div class="note">${esc(n)}</div>`).join('')}
+    </div>` : ''}
+    ${d.has_changes ? `<div class="warnbox">
+      <strong>Since your last scan</strong>
+      ${changeList('New in the code', d.new_areas)}
+      ${changeList('Now covered by a test', d.newly_covered)}
+      ${changeList('No longer in the code', d.gone)}
+    </div>` : ''}
+    ${(d.still_missing || []).length ? `<div class="note" style="margin-top:14px">
+      <strong>Still untested — ${d.still_missing.length}, most critical first</strong>
+      <div class="muted" style="font-size:12px;margin-top:4px">
+        ${d.still_missing.slice(0, 8).map((i) => esc(i)).join(' · ')}
+        ${d.still_missing.length > 8 ? ` · and ${d.still_missing.length - 8} more` : ''}
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:6px">
+        Press <strong>Build tests</strong> to work down this list. Each test is
+        run against your deployment as it is written, and only kept if it passes.
+      </div>
+    </div>` : ''}`;
+
+  const section = (title, note, rows) => `
+    <h3 style="margin:22px 0 2px;font-size:13px">${title}
+      <span class="muted" style="font-weight:400">${note}</span></h3>
+    <table>${rows}</table>`;
+
+  $('overview-config').innerHTML =
+    ((pr.transactions || []).length ? section(
+      `Transactions (${pr.transactions.length})`,
+      '— a page together with what it can change. Where regressions cost most.',
+      pr.transactions.map((t) => `<tr>
+        <td style="width:110px">${pill(t.criticality)}</td>
+        <td style="width:34px">${t.covered ? '<span class="pill pass">tested</span>' : ''}</td>
+        <td><strong>${esc(t.name)}</strong>
+          <div class="muted" style="font-size:12px">${esc(t.steps.join(' → '))}</div></td>
+        <td class="muted" style="width:38%">${esc(t.how_to_test)}</td>
+      </tr>`).join('')) : '')
+    +
+    ((pr.pages || []).length ? section(
+      `Pages (${pr.pages.length})`, '— what a user can navigate to.',
+      pr.pages.map((p) => `<tr>
+        <td style="width:110px">${pill(p.criticality)}</td>
+        <td style="width:34px">${p.covered ? '<span class="pill pass">tested</span>' : ''}</td>
+        <td class="mono">${esc(p.path)}</td>
+        <td class="muted">${p.reads} read · ${p.writes} write${p.behind_login ? ' · behind sign-in' : ''}</td>
+      </tr>`).join('')) : '')
+    +
+    ((pr.apis || []).length ? section(
+      `APIs (${pr.apis.length})`,
+      `— ${pr.apis.filter((a) => a.changes_data).length} of them change data.`,
+      pr.apis.slice(0, 40).map((a) => `<tr>
+        <td style="width:110px">${pill(a.criticality)}</td>
+        <td style="width:34px">${a.covered ? '<span class="pill pass">tested</span>' : ''}</td>
+        <td class="mono">${esc(a.methods.join('/'))} ${esc(a.path)}</td>
+        <td class="muted">${a.changes_data ? 'changes data' : 'read only'}</td>
+      </tr>`).join('')) : '');
 }
 
 function renderGaps() {
@@ -1066,7 +1081,7 @@ async function loadRepos() {
 async function loadRepo() {
   if (!state.repoId) { render(activeTab()); return; }
   const base = `/api/repos/${state.repoId}`;
-  const [overview, gaps, scenarios, surfaces, runs, jobs, config, questions] = await Promise.all([
+  const [overview, gaps, scenarios, surfaces, runs, jobs, config, questions, project] = await Promise.all([
     api(`${base}/overview`).catch(() => ({})),
     api(`${base}/gaps`).catch(() => ({})),
     api(`${base}/scenarios`).catch(() => ({})),
@@ -1075,8 +1090,9 @@ async function loadRepo() {
     api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
     api(`${base}/config`).catch(() => ({})),
     api(`${base}/questions`).catch(() => ({})),
+    api(`${base}/project`).catch(() => ({})),
   ]);
-  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config, questions });
+  Object.assign(state, { overview, gaps, scenarios, surfaces, runs, jobs, config, questions, project });
   render(activeTab());
 }
 

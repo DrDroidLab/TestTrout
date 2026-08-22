@@ -98,6 +98,16 @@ class QaPaths:
         return self.dir / "questions.yaml"
 
     @property
+    def overview(self) -> Path:
+        """The product account from the most recent scan.
+
+        Kept so the *next* scan can say what changed. Committed, because a
+        reviewer reading a pull request benefits from seeing that a page
+        appeared or an endpoint went away.
+        """
+        return self.dir / "overview.yaml"
+
+    @property
     def scenarios(self) -> Path:
         """Approved scenario specifications."""
         return self.dir / "scenarios"

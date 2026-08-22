@@ -16,6 +16,7 @@ from testtrout.app.settings import ConfigView
 from testtrout.domain.gap import GapMap
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import Divergence, ProbeResult
+from testtrout.domain.overview import ProjectOverview, ScanDelta
 from testtrout.domain.question import QuestionLog
 from testtrout.domain.run import RunRecord, RunStatus
 from testtrout.domain.scenario import ScenarioIndex
@@ -81,6 +82,55 @@ def scan_summary(result: ScanResult) -> None:
             if level in by_level
         ]
         console.print("  ".join(parts))
+
+
+def project_overview(overview: ProjectOverview, changed: ScanDelta) -> None:
+    """What the product is, what moved since last time, and what is left.
+
+    Printed after every scan, because "I scanned — now what?" is the question
+    a scan should answer. The second half is the useful half: a rescan that
+    reprints the same forty items tells you nothing, while "three of those now
+    have tests, and here is the next one to write" tells you where you are.
+    """
+    console.print()
+    console.print(overview.summary)
+
+    coverage = overview.coverage
+    console.print()
+    console.print(
+        f"[bold]coverage {coverage.overall_percent}%[/bold]  "
+        f"[dim]transactions {coverage.transactions_percent}% · "
+        f"pages {coverage.pages_percent}% · apis {coverage.apis_percent}%[/dim]"
+    )
+
+    for label, items, style in (
+        ("new since last scan", changed.new_areas, "cyan"),
+        ("now covered", changed.newly_covered, "green"),
+        ("no longer in the code", changed.gone, "yellow"),
+    ):
+        if not items:
+            continue
+        console.print()
+        console.print(f"[{style}]{label}[/{style}]  [dim]{len(items)}[/dim]")
+        for item in items[:5]:
+            console.print(f"  {item}", markup=False)
+        if len(items) > 5:
+            console.print(f"  [dim]and {len(items) - 5} more[/dim]")
+
+    if changed.still_missing:
+        console.print()
+        console.print(
+            f"[bold]{len(changed.still_missing)} untested[/bold] "
+            "[dim]— most worth doing first[/dim]"
+        )
+        for item in changed.still_missing[:5]:
+            console.print(f"  {item}", markup=False)
+
+    if overview.needs_from_you:
+        console.print()
+        console.print("[yellow]needs you[/yellow]")
+        for item in overview.needs_from_you:
+            console.print(f"  {item}", markup=False)
 
 
 def surface_table(result: ScanResult, limit: int | None = None) -> None:

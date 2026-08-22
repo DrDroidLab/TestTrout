@@ -45,15 +45,35 @@ That starts everything: storage, a background worker, and the interface at
 `localhost:7411`. No Docker, no daemon, no database to install — storage is SQLite
 under `~/.testtrout` and the worker runs in-process.
 
-Then link a repository, from the interface or the terminal:
+Then add a project — a repository, and the URL it is deployed at:
 
 ```bash
-trout link ~/code/my-app          # a folder you already have
-trout link --github owner/name    # cloned with your GitHub token
+trout link ~/code/my-app --url https://my-app.vercel.app
+trout link --github owner/name --url https://my-app.vercel.app
 ```
 
-Linking a local folder never modifies it. A scan starts automatically, and the **Setup**
-tab has every setting: deployments, Supabase, test accounts, model provider.
+Both halves matter. The repository says what your product is supposed to do; the
+deployment says what it actually does, and a test is only worth keeping once it has
+been run against the second. Your folder is never modified, and the deployment is
+read-only until you mark it disposable.
+
+A scan starts automatically and answers three questions:
+
+- **What is this?** Your pages, your APIs, and the transactions they add up to — a
+  page together with the state it can change, which is where regressions hurt.
+- **What does TestTrout still need from you?** Discovered by reading your source: which
+  variables the app reaches for and what each is likely for. A partial set gives a
+  partial suite — with only a URL you can probe and run API tests; add a second test
+  account and authorization tests become possible. Every blocked capability names the
+  one next thing it needs, never "configure it properly".
+- **What is untested?** Ranked, most worth doing first.
+
+Then press **Build tests**. Each test is written, run against your deployment, and kept
+only if it passes — a test nobody has run is a guess, and approving one is guessing
+twice. Anything that cannot be settled becomes a question rather than an assumption.
+
+Scan again whenever you like: the second scan reports what moved — new areas in the
+code, what the suite now covers, what is gone — rather than reprinting the same list.
 
 Two things make that safe and useful:
 

@@ -29,6 +29,7 @@ from testtrout.domain.config import (
 )
 from testtrout.domain.intent import ProductIntent
 from testtrout.domain.observation import ProbeResult
+from testtrout.domain.overview import ProjectOverview, ScanDelta
 from testtrout.domain.run import RunRecord
 from testtrout.domain.scenario import ScenarioStatus
 from testtrout.domain.surface import Criticality, ScanResult
@@ -110,12 +111,40 @@ def scan(
 
     render.scan_summary(result)
     render.warnings(result)
-    if save:
-        render.console.print()
-        render.console.print(f"[dim]written to {paths.surfaces.relative_to(paths.root)}[/dim]")
-        render.console.print(
-            "[dim]next: `trout surfaces` to review, `trout init` to connect a deployment[/dim]"
-        )
+    if not save:
+        return
+
+    changed, overview = _record_overview(paths, result)
+    render.project_overview(overview, changed)
+
+    render.console.print()
+    render.console.print(f"[dim]written to {paths.surfaces.relative_to(paths.root)}[/dim]")
+    config = read_model(paths.config, Config) if paths.config.is_file() else Config()
+    render.console.print(
+        "[dim]next: `trout build` to write tests[/dim]"
+        if config.entrypoint() is not None
+        else "[dim]next: `trout init --url <url>` to connect a deployment[/dim]"
+    )
+
+
+def _record_overview(paths: QaPaths, result: ScanResult) -> tuple[ScanDelta, ProjectOverview]:
+    """Describe the product, and say what moved since the last scan.
+
+    The snapshot is kept so the *next* scan has something to compare against.
+    Without it a rescan reprints the same list and gives no sense of progress.
+    """
+    from testtrout.planning.overview import build as build_overview
+    from testtrout.planning.overview import delta as compare
+    from testtrout.planning.readiness import assess
+
+    config = read_model(paths.config, Config) if paths.config.is_file() else Config()
+    from testtrout.authoring.store import load_all
+
+    index, _ = load_all(paths.scenarios)
+    previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
+    overview = build_overview(result, index, assess(config, result))
+    write_model(paths.overview, overview)
+    return compare(previous, overview), overview
 
 
 def _sync_project_config(paths: QaPaths, result: ScanResult) -> None:
@@ -665,6 +694,85 @@ def _gap_map(paths: QaPaths, config: Config):  # type: ignore[no-untyped-def]
             roles=[u.role for u in config.test_users],
         ),
     )
+
+
+@app.command()
+def build(
+    path: PathArg = None,
+    as_json: JsonOpt = False,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="How many gaps to attempt.")] = 5,
+    entrypoint: Annotated[
+        str | None, typer.Option("--entrypoint", help="Which deployment to prove tests against.")
+    ] = None,
+    no_model: Annotated[
+        bool, typer.Option("--no-model", help="Skip model enrichment. Works with no API key.")
+    ] = False,
+) -> None:
+    """Write tests for what is untested, keeping only the ones that pass.
+
+    Each test is drafted, written, and run against your deployment before the
+    next one is started — so the suite grows a test at a time and you see each
+    one prove itself rather than waiting for a batch.
+
+    A test that passes is kept. A test that fails is held back with the failure
+    recorded as a question, because a failing new test is either a wrong
+    expectation or a real problem, and only you can say which. Nothing is
+    approved on your behalf and nothing unproven counts as coverage.
+
+    The same thing the Build tests button does.
+    """
+    from testtrout.authoring.build import build_suite
+    from testtrout.llm.gateway import Gateway
+
+    paths = _resolve(path)
+    if not paths.surfaces.is_file():
+        render.error_console.print("[red]No scan found.[/red] Run `trout scan` first.")
+        raise typer.Exit(2)
+
+    config = read_model(paths.config, Config) if paths.config.is_file() else Config()
+    target = config.entrypoint(entrypoint)
+    if target is None:
+        render.error_console.print(
+            "[red]No deployment configured.[/red] Add one with `trout init --url <url>`."
+        )
+        raise typer.Exit(2)
+
+    scan_result = read_model(paths.surfaces, ScanResult)
+    captured = read_model(paths.intent, ProductIntent) if paths.intent.is_file() else None
+    outcome = build_suite(
+        paths,
+        config,
+        scan_result,
+        target,
+        intent=captured,
+        probe=_load_probe(paths, config),
+        gateway=None if no_model else Gateway(config.model, paths.cache),
+        limit=limit,
+        # Progress as it happens, not a report at the end: a build runs real
+        # tests against a real deployment and can take minutes.
+        log=(lambda line: None) if as_json else _build_line,
+    )
+
+    if as_json:
+        typer.echo(json.dumps(outcome.as_dict()))
+        return
+
+    render.console.print()
+    render.console.print(
+        f"[green]{len(outcome.kept)} kept[/green]"
+        + (f"  [yellow]{outcome.needs_you} need you[/yellow]" if outcome.needs_you else "")
+    )
+    if outcome.needs_you:
+        render.console.print("[dim]see `trout questions`[/dim]")
+
+
+def _build_line(line: str) -> None:
+    """One line of build progress. Indented lines are detail about the test above.
+
+    Printed with ``markup=False``: these lines carry test titles and failure
+    messages, and a bracket in one would otherwise be read as markup and eaten.
+    """
+    render.console.print(line, style="" if line.startswith(" ") else "bold", markup=False)
 
 
 @app.command()
@@ -1234,11 +1342,19 @@ def link(
     github: Annotated[
         bool, typer.Option("--github", help="Treat the argument as a GitHub repository to clone.")
     ] = False,
+    url: Annotated[
+        str | None,
+        typer.Option("--url", help="Where the project is deployed, e.g. https://app.vercel.app"),
+    ] = None,
 ) -> None:
-    """Link a repository so the app can work on it.
+    """Add a project: a repository, and the URL it is deployed at.
 
     A local directory is linked in place and never modified. A GitHub
     repository is cloned into ~/.testtrout/repos first.
+
+    Pass --url now if you can. Without a deployment the first scan can only
+    read code; with one it can also check what the running system actually
+    does, which is the difference between a guess and evidence.
     """
     from testtrout.app import Database, RepoRegistry
     from testtrout.app.repos import RepoError
@@ -1268,9 +1384,27 @@ def link(
         render.error_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
 
+    if url:
+        from testtrout.app import settings
+
+        try:
+            settings.apply(
+                QaPaths(root=Path(record.path)),
+                {"entrypoints": [{"name": "deployment", "url": url}]},
+            )
+        except settings.SettingsError as exc:
+            render.error_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from exc
+
     registry.queue_initial_scan(record)
-    render.console.print(f"[green]linked[/green] {record.name}")
-    render.console.print(f"  [dim]{record.path}[/dim]")
+    render.console.print(f"[green]added[/green] {record.name}")
+    # style= rather than [dim]…[/dim]: a path or URL is data, and a bracket in
+    # one would otherwise be read as markup and swallowed.
+    render.console.print(f"  {record.path}", style="dim", markup=False)
+    if url:
+        render.console.print(f"  {url}", style="dim", markup=False)
+    else:
+        render.console.print("[dim]no deployment yet — add one with `trout init --url <url>`[/dim]")
     render.console.print(
         "[dim]a scan is queued — run `trout up` to process it, or `trout scan` now[/dim]"
     )
