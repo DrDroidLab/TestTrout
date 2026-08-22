@@ -163,7 +163,9 @@ def _record_overview(context: JobContext) -> dict[str, Any]:
     previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
     index, _ = context.scenarios()
     scan = context.scan_result()
-    current = build_overview(scan, index, assess(context.config(), scan))
+    current = build_overview(
+        scan, index, assess(context.config(), scan, context.probe_result())
+    )
     write_model(paths.overview, current)
 
     changed = compare(previous, current)
@@ -337,6 +339,7 @@ def handle_generate(context: JobContext) -> dict[str, Any]:
     """Compile approved scenarios into test files."""
     from testtrout.authoring.base import select_emitter
     from testtrout.authoring.store import save
+    from testtrout.runtime.toolchain import app_root
 
     config = context.config()
     index, _ = context.scenarios()
@@ -352,7 +355,7 @@ def handle_generate(context: JobContext) -> dict[str, Any]:
             context.log(f"no emitter for {scenario.kind.value}")
             continue
         emitted = emitter.emit(scenario, config)
-        destination = context.paths.root / emitted.path
+        destination = app_root(context.paths.root) / emitted.path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(emitted.content, encoding="utf-8")
         shared.update(emitted.shared)
@@ -364,7 +367,7 @@ def handle_generate(context: JobContext) -> dict[str, Any]:
             context.log(note)
 
     for rel, content in shared.items():
-        path = context.paths.root / rel
+        path = app_root(context.paths.root) / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         context.log(f"wrote {rel}")
@@ -480,7 +483,7 @@ def _refresh_questions(context: JobContext) -> int:
     raised = question_planner.collect(
         log,
         scan=scan,
-        plan=assess(config, scan),
+        plan=assess(config, scan, context.probe_result()),
         probe=context.probe_result(),
         gaps=gaps,
         scenarios=index,

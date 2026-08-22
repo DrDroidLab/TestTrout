@@ -50,6 +50,10 @@ def build(
     """
     environment = TestEnvironment()
     environment.variables["TROUT_BASE_URL"] = entrypoint.url
+    # Endpoint tests call the API, which is not always the same origin as the
+    # pages. Falls back to the page URL, so an app that serves both from one
+    # place needs no extra configuration.
+    environment.variables["TROUT_API_URL"] = entrypoint.api_base
     # Only ever set for a deployment whose data can be destroyed. Generated
     # tests check it themselves, so the guarantee survives being run by hand.
     if entrypoint.writable:

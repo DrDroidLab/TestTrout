@@ -850,12 +850,17 @@ function renderSetup() {
 
     <div class="card" style="margin-bottom:14px">
       <strong>Deployments</strong>
-      <div class="muted" style="font-size:12.5px">Where your app is running. Read-only unless you say otherwise.</div>
+      <div class="muted" style="font-size:12.5px">Where your app is running. Read-only unless you
+        say otherwise. Give the API URL separately if your backend is deployed on its own host —
+        otherwise every endpoint test asks the frontend for a path it does not serve.</div>
       <table id="ep-table">
         ${(cfg.entrypoints || []).map((e, i) => `
           <tr>
             <td style="width:150px"><input type="text" data-ep="name" data-i="${i}" value="${esc(e.name)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
-            <td><input type="text" data-ep="url" data-i="${i}" value="${esc(e.url)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
+            <td>
+              <input type="text" data-ep="url" data-i="${i}" value="${esc(e.url)}" placeholder="https://your-app.vercel.app" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
+              <input type="text" data-ep="api_url" data-i="${i}" value="${esc(e.api_url || '')}" placeholder="API URL — only if the backend is deployed separately" style="width:100%;margin-top:5px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
+            </td>
             <td style="width:230px">
               <label style="font-size:12.5px;cursor:pointer">
                 <input type="checkbox" data-ep="disposable" data-i="${i}" ${e.disposable ? 'checked' : ''}>
@@ -967,6 +972,7 @@ function harvestSetup() {
   cfg.entrypoints = [...document.querySelectorAll('#ep-table tr')].map((row, i) => ({
     name: row.querySelector('[data-ep="name"]').value.trim() || `env${i}`,
     url: row.querySelector('[data-ep="url"]').value.trim(),
+    api_url: row.querySelector('[data-ep="api_url"]').value.trim(),
     disposable: row.querySelector('[data-ep="disposable"]').checked,
   }));
   cfg.test_users = [...document.querySelectorAll('#user-table tr')].map((row) => ({
@@ -996,7 +1002,8 @@ function wireSetup() {
 
   $('add-ep').onclick = () => {
     const c = harvestSetup();
-    c.entrypoints = [...(c.entrypoints || []), { name: 'preview', url: '', disposable: false }];
+    c.entrypoints = [...(c.entrypoints || []),
+      { name: 'preview', url: '', api_url: '', disposable: false }];
     redraw();
   };
   $('add-user').onclick = () => {

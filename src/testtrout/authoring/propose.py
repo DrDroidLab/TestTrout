@@ -112,7 +112,7 @@ def propose(
     elif gap.kind is TestKind.BROWSER_JOURNEY:
         scenario = _browser(gap, scan, probe, roles)
     else:
-        scenario = _endpoint(gap, scan, roles)
+        scenario = _endpoint(gap, scan, roles, probe)
 
     scenario.entrypoint = entrypoint.name if entrypoint else None
     scenario.criticality = gap.criticality
@@ -252,8 +252,17 @@ def _browser(gap: Gap, scan: ScanResult, probe: ProbeResult | None, roles: list[
     )
 
 
-def _endpoint(gap: Gap, scan: ScanResult, roles: list[str]) -> Scenario:
-    """Build an endpoint or data-operation scenario."""
+def _endpoint(
+    gap: Gap, scan: ScanResult, roles: list[str], probe: ProbeResult | None = None
+) -> Scenario:
+    """Build an endpoint or data-operation scenario.
+
+    Whether an endpoint is behind a sign-in is settled by what the probe saw,
+    not by asking. Asking produced one identical question per endpoint — a
+    queue of thirty variations of "is this behind auth?" that a person would
+    have to answer by going and looking, which is exactly what the probe
+    already did.
+    """
     endpoint = next((e for e in scan.endpoints if e.id in gap.surfaces), None)
     action = next((a for a in scan.server_actions if a.id in gap.surfaces), None)
     operation = next((o for o in scan.data_operations if o.id in gap.surfaces), None)
@@ -266,20 +275,45 @@ def _endpoint(gap: Gap, scan: ScanResult, roles: list[str]) -> Scenario:
 
     if endpoint or action:
         name = endpoint.path if endpoint else (action.name if action else "the endpoint")
-        assertions.append(
-            Assertion(
-                kind=AssertionKind.STATUS,
-                target=Target(url=url, method=method),
-                expected="401",
-                provenance=Provenance.INFERRED,
-                source="unauthenticated callers should be refused",
-                description=f"{name} refuses an unauthenticated caller",
+        seen = probe.endpoint(endpoint.id) if probe and endpoint else None
+
+        if seen is not None and seen.status is not None:
+            # Assert what was actually observed, on the request that was
+            # actually made: an unauthenticated GET. That is a baseline
+            # regression assertion — this is how the endpoint behaved, tell me
+            # if it changes — and it is true by observation rather than by
+            # assumption. It also keeps the generated test safe to run against
+            # a live deployment, because a GET cannot change anything.
+            method = "GET"
+            assertions.append(
+                Assertion(
+                    kind=AssertionKind.STATUS,
+                    target=Target(url=url, method="GET"),
+                    expected=str(seen.status),
+                    provenance=Provenance.OBSERVED,
+                    source=seen.detail,
+                    description=(
+                        f"{name} still refuses an unauthenticated caller"
+                        if seen.needs_account
+                        else f"{name} is still reachable without signing in"
+                    ),
+                )
             )
-        )
-        questions.append(
-            f"Should {name} refuse unauthenticated callers with 401, or does it serve public "
-            "data? The generated test assumes it refuses."
-        )
+        else:
+            assertions.append(
+                Assertion(
+                    kind=AssertionKind.STATUS,
+                    target=Target(url=url, method=method),
+                    expected="401",
+                    provenance=Provenance.INFERRED,
+                    source="unauthenticated callers should be refused",
+                    description=f"{name} refuses an unauthenticated caller",
+                )
+            )
+            questions.append(
+                f"Should {name} refuse unauthenticated callers with 401, or does it serve "
+                "public data? The probe could not reach it to find out."
+            )
     elif operation:
         questions.append(
             f"What is the correct outcome of {operation.operation.value} on "

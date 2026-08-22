@@ -89,10 +89,24 @@ class Entrypoint(BaseModel):
             "Mutating scenarios are refused against non-disposable entrypoints."
         ),
     )
+    api_url: str = Field(
+        default="",
+        description=(
+            "Where this deployment's HTTP API is served, when that is not the same "
+            "origin as the pages. Common on Vercel: the frontend is deployed there and "
+            "the backend somewhere else entirely, so endpoint paths mean nothing "
+            "against the page URL."
+        ),
+    )
     allow: list[Permission] = Field(default_factory=lambda: [Permission.READ])
     headers: dict[str, str] = Field(
         default_factory=dict, description="Extra headers, e.g. a Vercel bypass token."
     )
+
+    @property
+    def api_base(self) -> str:
+        """Where to send an endpoint request. Falls back to the page origin."""
+        return (self.api_url or self.url).rstrip("/")
 
     @field_validator("url")
     @classmethod

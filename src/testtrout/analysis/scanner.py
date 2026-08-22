@@ -154,6 +154,11 @@ def scan(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> ScanResult:
     api_calls, api_warnings = http_calls.discover(files, allocator)
     result.endpoints.extend(api_calls)
     result.warnings.extend(api_warnings)
+    if api_calls:
+        # Where those calls actually go. An app whose backend is deployed
+        # separately has endpoint paths that only make sense against that
+        # backend's origin, not the frontend's.
+        result.project.api_base_var = http_calls.api_base(files)
 
     seen_vendors: set[str] = set()
     for _, file in sorted(files.items()):

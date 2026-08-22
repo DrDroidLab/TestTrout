@@ -316,6 +316,14 @@ class ProjectInfo(BaseModel):
     auth: str | None = None
     package_manager: str | None = None
     typescript: bool = True
+    api_base_var: str = Field(
+        default="",
+        description=(
+            "Environment variable holding the API's base URL, when the app calls a "
+            "separate backend. The *name* only — a URL in the source is a development "
+            "default and would be wrong about production."
+        ),
+    )
     detected_from: list[str] = Field(
         default_factory=list, description="Evidence for the detection, for auditability."
     )

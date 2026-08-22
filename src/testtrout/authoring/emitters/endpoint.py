@@ -33,7 +33,8 @@ function required(name: string): string {
   return value;
 }
 
-export const baseUrl = (): string => required('TROUT_BASE_URL').replace(/\\/$/, '');
+export const baseUrl = (): string =>
+  (process.env.TROUT_API_URL || required('TROUT_BASE_URL')).replace(/\\/$/, '');
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 

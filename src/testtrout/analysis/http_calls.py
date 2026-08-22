@@ -85,6 +85,56 @@ def wrapper_names(files: dict[str, SourceFile]) -> dict[str, str]:
     return found
 
 
+# `${API_URL}${path}` — the shape a client wrapper's fetch target almost always
+# takes. The first interpolation is the base; everything after it is the path.
+_TEMPLATE_BASE = re.compile(r"^\$\{([A-Za-z_$][\w.$]*)\}")
+
+# An environment variable read, however the framework spells it.
+_ENV_READ = re.compile(r"(?:process\.env|import\.meta\.env)\.([A-Z][A-Z0-9_]*)")
+
+
+def api_base(files: dict[str, SourceFile]) -> str:
+    """The environment variable holding the API's base URL, if there is one.
+
+    An application whose endpoints live on a separate backend calls them
+    through a base that is configured, not written down. Without this the
+    endpoint paths look absolute and every request goes to the frontend's own
+    origin, where they all return 404 — which reads as "these endpoints are
+    public" or "your app is broken", and is neither.
+
+    Returns the variable name — never a value. A URL in the source is a
+    development default and lying about production.
+    """
+    for _rel, file in sorted(files.items()):
+        text = file.source.decode("utf-8", errors="replace")
+        if not _FETCH.search(text):
+            continue
+        for call in find_all(file.root, "call_expression"):
+            if file.text(call.child_by_field_name("function")) != "fetch":
+                continue
+            arguments = call.child_by_field_name("arguments")
+            target = arguments.named_child(0) if arguments else None
+            if target is None or target.type != "template_string":
+                continue
+            match = _TEMPLATE_BASE.match(file.text(target).strip("`"))
+            if match is None:
+                continue
+            # The base is an identifier; find what it was assigned from.
+            variable = match.group(1)
+            found = _ENV_READ.search(_assignment_of(variable, text) or "")
+            if found:
+                return found.group(1)
+    return ""
+
+
+def _assignment_of(name: str, text: str) -> str | None:
+    """The right-hand side of ``const <name> = ...``, up to the statement end."""
+    match = re.search(rf"\b(?:const|let|var)\s+{re.escape(name)}\s*=", text)
+    if match is None:
+        return None
+    return text[match.end() : match.end() + 300]
+
+
 def _exported_functions(declaration: Node, file: SourceFile) -> list[tuple[Node, Node]]:
     """Name and body of each function an export statement declares."""
     out: list[tuple[Node, Node]] = []

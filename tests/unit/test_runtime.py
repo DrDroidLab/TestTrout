@@ -467,3 +467,73 @@ def test_the_browser_helper_exports_everything_a_generated_test_imports(tmp_path
 
     exported = set(re.findall(r"export async function (\w+)", helper))
     assert names <= exported, f"imported but not exported: {sorted(names - exported)}"
+
+
+def test_the_toolchain_is_read_from_the_app_root_not_the_repository_root(tmp_path: Path):
+    """A monorepo keeps its frontend in a subdirectory.
+
+    Reading dependencies from the repository root there finds no package.json
+    at all, so every runner is reported missing and every generated test comes
+    back "the toolchain is not installed" — a confusing way to say "I looked in
+    the wrong directory".
+    """
+    import json
+
+    from testtrout.runtime import toolchain
+
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        json.dumps({"devDependencies": {"vitest": "^2", "@playwright/test": "^1"}}),
+        encoding="utf-8",
+    )
+
+    assert toolchain.app_root(tmp_path) == frontend
+
+    chain = toolchain.detect(tmp_path)
+    assert chain.has_vitest and chain.has_playwright
+
+
+def test_generated_configs_land_beside_the_package_json(tmp_path: Path):
+    """Otherwise the runner writes its config where npx will never look."""
+    import json
+
+    from testtrout.runtime import toolchain
+
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(json.dumps({}), encoding="utf-8")
+
+    toolchain.write_configs(tmp_path, timeout_seconds=30, report_dir=tmp_path / "runs")
+
+    assert (frontend / "tests/trout/playwright.config.ts").is_file()
+    assert not (tmp_path / "tests/trout/playwright.config.ts").exists()
+
+
+def test_authorization_specs_go_to_playwright_not_vitest(tmp_path: Path):
+    """They import @playwright/test, so only Playwright can run them.
+
+    Routing by directory sent `authz/` to Vitest, where they matched no include
+    glob — generated, never executed, and silently absent from every report.
+    """
+    from testtrout.runtime import toolchain
+
+    toolchain.write_configs(tmp_path, timeout_seconds=30, report_dir=tmp_path / "runs")
+    playwright = (tmp_path / "tests/trout/playwright.config.ts").read_text(encoding="utf-8")
+    vitest = (tmp_path / "tests/trout/vitest.config.ts").read_text(encoding="utf-8")
+
+    assert "authz/**/*.spec.ts" in playwright
+    assert "browser/**/*.spec.ts" in playwright
+    assert "authz" not in vitest
+
+
+def test_endpoint_tests_need_only_vitest():
+    """Requiring @supabase/supabase-js blocked every HTTP test in an app that
+    has never heard of Supabase — a leftover from when signing in meant calling
+    it directly, rather than driving the app's own login form."""
+    from testtrout.runtime.toolchain import Toolchain
+
+    chain = Toolchain(root=Path("."), has_vitest=True, has_supabase_js=False)
+
+    assert chain.can_run("node")
+    assert not chain.can_run("browser")

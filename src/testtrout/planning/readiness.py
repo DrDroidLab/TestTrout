@@ -15,8 +15,10 @@ Deterministic, and it reads names rather than values: whether a variable is
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from testtrout.domain.config import Config, SecretResolutionError, resolve_secret
+from testtrout.domain.observation import ProbeResult
 from testtrout.domain.requirements import Capability, Plan, Readiness
 from testtrout.domain.surface import ScanResult
 
@@ -52,17 +54,53 @@ def _playwright_installed() -> bool:
     return True
 
 
-def assess(config: Config, scan: ScanResult | None = None) -> Plan:
+def _project_toolchain(scan: ScanResult | None):  # type: ignore[no-untyped-def]
+    """What the project itself has installed, if we know where it is.
+
+    Read from the scanned application root rather than the repository root: in
+    a monorepo the two differ, and looking in the wrong one reports every
+    runner as missing.
+    """
+    if scan is None or not scan.project.root:
+        return None
+    from testtrout.runtime.toolchain import detect
+
+    root = Path(scan.project.root)
+    return detect(root) if root.is_dir() else None
+
+
+def _install_hint(chain, package: str) -> str:  # type: ignore[no-untyped-def]
+    """The one command that fixes a missing runner, for the right package manager."""
+    command = {"pnpm": "pnpm add -D", "yarn": "yarn add -D", "bun": "bun add -d"}.get(
+        chain.package_manager, "npm install -D"
+    )
+    extra = " && npx playwright install chromium" if package == "@playwright/test" else ""
+    return f"the {package} test runner — install it in your project: {command} {package}{extra}"
+
+
+def assess(
+    config: Config, scan: ScanResult | None = None, probe: ProbeResult | None = None
+) -> Plan:
     """Work out what can be done with the current configuration.
 
     Args:
         config: The repository's configuration.
         scan: The last scan, which supplies discovered requirements and tells
             us whether the app has an auth wall worth signing in through.
+        probe: What the deployment actually did. When present it is preferred
+            over inference: an endpoint that answered 401 to an unauthenticated
+            request is evidence that an account is needed, and it lets the ask
+            name how many endpoints are behind the wall rather than guessing
+            that there is one.
     """
     entrypoint = config.entrypoint()
     users = config.test_users
-    needs_auth = bool(scan and scan.policies) or bool(scan and scan.project.auth)
+    # What the *project* can run, not what TestTrout can. A repository with no
+    # test runner installed drafts tests perfectly well and then cannot execute
+    # one of them, which is the least useful moment to find out.
+    chain = _project_toolchain(scan)
+    gated = probe.endpoints_needing_account if probe else []
+    needs_auth = bool(gated) or bool(scan and scan.policies) or bool(scan and scan.project.auth)
     # Tests drive the app's own interface and endpoints, so direct database
     # credentials are never required. Supabase settings only enable resetting
     # the database between runs.
@@ -91,6 +129,8 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
     missing = []
     if entrypoint is None:
         missing.append("a deployment URL — add one under Deployments")
+    if chain is not None and not chain.has_vitest:
+        missing.append(_install_hint(chain, "vitest"))
     readiness.append(
         Readiness(
             capability=Capability.API_TESTS,
@@ -108,8 +148,15 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
         missing.append(
             "browser support — pip install 'testtrout[probe]' && playwright install chromium"
         )
+    if chain is not None and not chain.has_playwright:
+        missing.append(_install_hint(chain, "@playwright/test"))
     if needs_auth and not users:
-        missing.append("at least one test account — this app is behind a login")
+        missing.append(
+            f"a test account — {len(gated)} endpoint(s) refused an unauthenticated request, "
+            "so testing them needs someone to sign in as"
+            if gated
+            else "a test account — this app is behind a login"
+        )
     if needs_auth and users and not login_ready:
         missing.append(
             "the sign-in form has not been located yet — run a probe, which finds it once"
@@ -134,6 +181,8 @@ def assess(config: Config, scan: ScanResult | None = None) -> Plan:
         missing.append(
             "browser support — pip install 'testtrout[probe]' && playwright install chromium"
         )
+    if chain is not None and not chain.has_playwright:
+        missing.append(_install_hint(chain, "@playwright/test"))
     if users and not login_ready:
         missing.append(
             "the sign-in form has not been located yet — run a probe, which finds it once"

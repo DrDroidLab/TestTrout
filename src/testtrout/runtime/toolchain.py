@@ -31,7 +31,11 @@ PLAYWRIGHT_CONFIG = """\
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './browser',
+  // Both directories hold Playwright specs: browser journeys, and the
+  // authorization tests that prove one account cannot see another's data by
+  // signing in as each in turn.
+  testDir: '.',
+  testMatch: ['browser/**/*.spec.ts', 'authz/**/*.spec.ts'],
   // Deliberate: retrying hides the flakiness it should surface. Repeats happen
   // during `trout certify`, where inconsistency is the signal being measured.
   retries: 0,
@@ -58,7 +62,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['tests/trout/authz/**/*.test.ts', 'tests/trout/endpoint/**/*.test.ts'],
+    include: ['tests/trout/endpoint/**/*.test.ts'],
     testTimeout: __TIMEOUT_MS__,
     retry: 0,
     fileParallelism: false,
@@ -91,10 +95,17 @@ class Toolchain:
         }.get(self.package_manager, ["npx", "--no-install"])
 
     def can_run(self, kind: str) -> bool:
-        """Whether a given test kind can execute here."""
+        """Whether a given test kind can execute here.
+
+        Endpoint tests need only Vitest. Requiring ``@supabase/supabase-js``
+        alongside it was left over from when signing in meant calling Supabase
+        directly; tests now drive the app's own login form, so an application
+        that has never heard of Supabase is no longer blocked from running a
+        single HTTP test.
+        """
         if kind == "browser":
             return self.has_playwright
-        return self.has_vitest and self.has_supabase_js
+        return self.has_vitest
 
 
 def _dependencies(root: Path) -> dict[str, str]:
@@ -113,12 +124,27 @@ def _dependencies(root: Path) -> dict[str, str]:
     return deps
 
 
+def app_root(root: Path) -> Path:
+    """Where the JavaScript project actually lives.
+
+    A monorepo keeps its frontend in ``frontend/`` or ``apps/web/``, and the
+    repository root has no ``package.json`` at all. Reading dependencies from
+    the repository root there finds nothing, so every runner is reported as
+    missing and every test comes back "the toolchain is not installed" — a
+    confusing way to say "I looked in the wrong directory".
+    """
+    from testtrout.analysis.detect import find_app_root
+
+    return find_app_root(root) or root
+
+
 def detect(root: Path) -> Toolchain:
     """Determine what the project can run, and report what it cannot.
 
     Missing packages are reported with the exact install command rather than
     left to surface as an opaque `npx` failure ten seconds later.
     """
+    root = app_root(root)
     deps = _dependencies(root)
     manager = next(
         (
@@ -156,11 +182,6 @@ def detect(root: Path) -> Toolchain:
             f"vitest is not installed — authorization and endpoint tests cannot run. "
             f"Install it with: {install} vitest"
         )
-    if not toolchain.has_supabase_js:
-        toolchain.problems.append(
-            "@supabase/supabase-js is not a dependency — authorization tests need it to "
-            "sign in as a test user."
-        )
     return toolchain
 
 
@@ -170,6 +191,7 @@ def write_configs(root: Path, timeout_seconds: int, report_dir: Path) -> list[st
     Returns the repository-relative paths written, so the caller can report
     exactly what appeared in the working tree.
     """
+    root = app_root(root)
     directory = root / TROUT_TEST_DIR
     directory.mkdir(parents=True, exist_ok=True)
     timeout_ms = max(timeout_seconds, 1) * 1000

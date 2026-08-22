@@ -168,6 +168,47 @@ class ObservedLogin(BaseModel):
     note: str = ""
 
 
+class AuthPosture(StrEnum):
+    """What an endpoint does when nobody is signed in.
+
+    Determined by asking it, not by asking the user. One unauthenticated
+    request answers a question that would otherwise be repeated once per
+    endpoint, and the answer is evidence rather than a recollection.
+    """
+
+    REQUIRES_AUTH = "requires_auth"
+    """Refused an unauthenticated caller. Testing it needs an account."""
+    PUBLIC = "public"
+    """Served, or reached its own validation, without any credentials."""
+    UNKNOWN = "unknown"
+    """The probe could not tell — usually the host never answered."""
+
+
+class ObservedEndpoint(BaseModel):
+    """What one endpoint did when called without credentials.
+
+    Only ever probed with a **GET**, whatever methods the endpoint declares.
+    A GET cannot create, update, or delete anything, and the distinction that
+    matters survives it: a 401 means the auth layer answered first, while a
+    405 Method Not Allowed means the request got past auth to the router. That
+    is enough to decide whether a test needs an account, without sending a
+    single request that could change data in a real deployment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_id: str
+    path: str
+    posture: AuthPosture = AuthPosture.UNKNOWN
+    status: int | None = Field(default=None, description="Status of the unauthenticated GET.")
+    detail: str = Field(default="", description="Why this posture, in one line.")
+
+    @property
+    def needs_account(self) -> bool:
+        """Whether testing this endpoint properly needs a signed-in user."""
+        return self.posture is AuthPosture.REQUIRES_AUTH
+
+
 class ProbeResult(BaseModel):
     """Everything one probe run observed. Written to ``.trout/observed/``."""
 
@@ -182,6 +223,9 @@ class ProbeResult(BaseModel):
         default=None, description="The sign-in form, if one was found."
     )
     screens: list[ObservedScreen] = Field(default_factory=list)
+    endpoints: list[ObservedEndpoint] = Field(
+        default_factory=list, description="What each endpoint did with no credentials."
+    )
     divergences: list[Divergence] = Field(default_factory=list)
     external_hosts: list[str] = Field(
         default_factory=list,
@@ -192,6 +236,15 @@ class ProbeResult(BaseModel):
     def reachable_count(self) -> int:
         """How many routes actually loaded."""
         return sum(1 for s in self.screens if s.reachable)
+
+    def endpoint(self, endpoint_id: str) -> ObservedEndpoint | None:
+        """What was observed about one endpoint, if it was probed."""
+        return next((e for e in self.endpoints if e.endpoint_id == endpoint_id), None)
+
+    @property
+    def endpoints_needing_account(self) -> list[ObservedEndpoint]:
+        """Every endpoint that refused an unauthenticated caller."""
+        return [e for e in self.endpoints if e.needs_account]
 
     def all_calls(self) -> list[NetworkCall]:
         """Every request observed across every screen."""

@@ -26,6 +26,7 @@ from testtrout.domain.observation import ProbeResult
 from testtrout.domain.scenario import Scenario, ScenarioStatus
 from testtrout.domain.surface import ScanResult
 from testtrout.llm.gateway import Gateway
+from testtrout.runtime.toolchain import app_root
 from testtrout.store import QaPaths, write_model
 
 
@@ -150,7 +151,7 @@ def build_suite(
 
         output = emitter.emit(scenario, config)
         for relative, content in {output.path: output.content, **output.shared}.items():
-            destination = paths.root / relative
+            destination = app_root(paths.root) / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(content, encoding="utf-8")
         scenario.emitted_to = output.path

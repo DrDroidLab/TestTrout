@@ -175,6 +175,54 @@ def from_gaps(gaps: GapMap) -> list[Question]:
     return out
 
 
+def from_api_address(
+    scan: ScanResult | None, probe: ProbeResult | None, config: Config | None
+) -> list[Question]:
+    """Ask once where the API lives, when the evidence says it is not here.
+
+    An app whose backend deploys separately has endpoint paths that mean
+    nothing against the frontend's origin: every one of them returns 404. Asked
+    per endpoint that is thirty identical questions; asked once it is a single
+    setting, and answering it makes every endpoint testable at the same time.
+    """
+    if scan is None or config is None or not scan.endpoints:
+        return []
+
+    entrypoint = config.entrypoint()
+    if entrypoint is None or entrypoint.api_url:
+        return []
+
+    # Prefer the deployment's own answer. Falling back to the code alone would
+    # nag an app that happens to serve its API from the same origin.
+    if probe is not None and probe.endpoints:
+        answered = [e for e in probe.endpoints if e.status is not None]
+        missing = [e for e in answered if e.status == 404]
+        if not answered or len(missing) * 2 <= len(answered):
+            return []
+        evidence = f"{len(missing)} of {len(answered)} endpoints returned 404"
+    elif scan.project.api_base_var:
+        evidence = f"your code reads the API address from {scan.project.api_base_var}"
+    else:
+        return []
+
+    variable = scan.project.api_base_var
+    return [
+        Question(
+            id="q:api-address",
+            kind=QuestionKind.MISSING_CREDENTIAL,
+            text="Where is this app's API served from?",
+            context=(
+                f"{evidence} against {entrypoint.url}, so the backend is deployed "
+                "somewhere else. Set it as the API URL for this deployment under Setup"
+                + (f" — the same value as {variable}." if variable else ".")
+            ),
+            unlocks=f"All {len(scan.endpoints)} endpoint(s) become testable.",
+            subject="api_address",
+            source="scan",
+        )
+    ]
+
+
 def collect(
     log: QuestionLog,
     scan: ScanResult | None = None,
@@ -192,6 +240,7 @@ def collect(
     raised = 0
     for question in (
         (from_scan(scan) if scan else [])
+        + from_api_address(scan, probe, config)
         + (from_readiness(plan) if plan else [])
         + (from_probe(probe) if probe else [])
         + (from_gaps(gaps) if gaps else [])

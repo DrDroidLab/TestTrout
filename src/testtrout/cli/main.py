@@ -142,7 +142,7 @@ def _record_overview(paths: QaPaths, result: ScanResult) -> tuple[ScanDelta, Pro
 
     index, _ = load_all(paths.scenarios)
     previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
-    overview = build_overview(result, index, assess(config, result))
+    overview = build_overview(result, index, assess(config, result, _load_probe(paths, config)))
     write_model(paths.overview, overview)
     return compare(previous, overview), overview
 
@@ -976,6 +976,7 @@ def generate(
     written: list[tuple[str, list[str]]] = []
     shared: dict[str, str] = {}
     from testtrout.authoring.store import save
+    from testtrout.runtime.toolchain import app_root
 
     for scenario in approved:
         emitter = select_emitter(scenario)
@@ -985,7 +986,7 @@ def generate(
             )
             continue
         emitted = emitter.emit(scenario, config)
-        destination = root / emitted.path
+        destination = app_root(root) / emitted.path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(emitted.content, encoding="utf-8")
         shared.update(emitted.shared)
@@ -995,7 +996,7 @@ def generate(
         save(paths.scenarios, scenario)
 
     for rel, content in shared.items():
-        destination = root / rel
+        destination = app_root(root) / rel
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
         written.append((rel, []))

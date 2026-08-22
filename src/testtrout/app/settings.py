@@ -35,6 +35,7 @@ from testtrout.domain.config import (
     Permission,
     TestUser,
 )
+from testtrout.domain.observation import ProbeResult
 from testtrout.domain.requirements import Plan
 from testtrout.domain.surface import ScanResult
 from testtrout.store import QaPaths, read_model, write_model
@@ -118,6 +119,20 @@ def _relevant_names(config: Config, scan: ScanResult | None) -> list[str]:
     return sorted(names)
 
 
+def probe_of(paths: QaPaths, config: Config) -> ProbeResult | None:
+    """The most recent probe of the default deployment, if there is one.
+
+    Readiness reads better with it: "12 endpoints refused an unauthenticated
+    request" is a reason to add an account, where "this app is behind a login"
+    is a guess restated.
+    """
+    entrypoint = config.entrypoint()
+    if entrypoint is None:
+        return None
+    path = paths.observed / f"{entrypoint.name}.yaml"
+    return read_model(path, ProbeResult) if path.is_file() else None
+
+
 def view(paths: QaPaths) -> ConfigView:
     """Current configuration, what it needs, and what it can already do."""
     from testtrout.planning.readiness import assess
@@ -128,7 +143,7 @@ def view(paths: QaPaths) -> ConfigView:
     scan = read_model(paths.surfaces, ScanResult) if paths.surfaces.is_file() else None
     return ConfigView(
         config=config,
-        plan=assess(config, scan),
+        plan=assess(config, scan, probe_of(paths, config)),
         env_present={name: bool(os.environ.get(name)) for name in _relevant_names(config, scan)},
     )
 
@@ -181,6 +196,7 @@ def _entrypoint(item: dict[str, Any]) -> Entrypoint:
             name=str(item.get("name") or "default").strip(),
             kind=EntrypointKind(item.get("kind", "web")),
             url=url,
+            api_url=str(item.get("api_url", "")).strip(),
             disposable=disposable,
             allow=[Permission.READ, Permission.WRITE] if disposable else [Permission.READ],
             headers={str(k): str(v) for k, v in (item.get("headers") or {}).items()},

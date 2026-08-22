@@ -6,6 +6,7 @@ project:
   backend: supabase
   auth: supabase
   typescript: true
+  api_base_var: ''
   detected_from:
     - 'package.json: vite + react'
     - 'package.json: @supabase/supabase-js'

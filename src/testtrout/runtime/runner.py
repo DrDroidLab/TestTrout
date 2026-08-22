@@ -117,9 +117,16 @@ def run(
                 for s in unsafe
             )
 
+    # Everything from here runs the project's own tooling, which only works
+    # from the directory holding its package.json.
+    root = toolchain.app_root(root)
     chain = toolchain.detect(root)
+    # The extension already says which runner owns a file: Playwright specs are
+    # .spec.ts, Vitest tests are .test.ts. Matching on the directory instead
+    # sent authorization specs — which are Playwright — to Vitest, where they
+    # matched no include glob and quietly produced no results at all.
     kinds_needed = {
-        "browser" if s.emitted_to and "browser/" in s.emitted_to else "node" for s in generated
+        "browser" if (s.emitted_to or "").endswith(".spec.ts") else "node" for s in generated
     }
     unrunnable = [k for k in kinds_needed if not chain.can_run(k)]
     if unrunnable:

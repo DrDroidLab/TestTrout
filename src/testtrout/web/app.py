@@ -401,7 +401,10 @@ def create_app(database: Database | None = None) -> FastAPI:
             return {"scanned": False}
 
         index, _ = scenarios_of(paths)
-        overview = build_overview(scan, index, assess(config_of(paths), scan))
+        from testtrout.app.settings import probe_of
+
+        config = config_of(paths)
+        overview = build_overview(scan, index, assess(config, scan, probe_of(paths, config)))
         coverage = overview.coverage
 
         # Coverage moves every time a test is certified, so it is recomputed

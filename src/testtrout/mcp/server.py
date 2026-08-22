@@ -408,6 +408,8 @@ def build_server(root: Path) -> MCPServer:
         if not approved:
             return {"error": "no approved scenarios", "fix": "call propose, then approve"}
 
+        from testtrout.runtime.toolchain import app_root
+
         files: list[dict[str, Any]] = []
         shared: dict[str, str] = {}
         for scenario in approved:
@@ -416,7 +418,7 @@ def build_server(root: Path) -> MCPServer:
                 files.append({"path": None, "error": f"no emitter for {scenario.kind.value}"})
                 continue
             emitted = emitter.emit(scenario, config)
-            destination = paths.root / emitted.path
+            destination = app_root(paths.root) / emitted.path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(emitted.content, encoding="utf-8")
             shared.update(emitted.shared)
@@ -425,7 +427,7 @@ def build_server(root: Path) -> MCPServer:
             files.append({"path": emitted.path, "notes": emitted.notes})
 
         for rel, content in shared.items():
-            destination = paths.root / rel
+            destination = app_root(paths.root) / rel
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(content, encoding="utf-8")
             files.append({"path": rel, "notes": []})

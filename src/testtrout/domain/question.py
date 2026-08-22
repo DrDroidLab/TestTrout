@@ -179,8 +179,19 @@ class QuestionLog(BaseModel):
         Deduplicated by id, so a rescan does not reopen something the developer
         has already answered or dismissed. A queue that regrows every scan is a
         queue nobody works through.
+
+        Also deduplicated by kind and text together, because two sources can
+        arrive at the same sentence honestly: browser tests and authorization
+        tests are blocked by the same missing runner, and asking twice for one
+        install command makes the queue look like busywork. Kind is part of the
+        key so that two genuinely different questions which happen to share
+        wording are not silently collapsed into one.
         """
-        if any(q.id == question.id for q in self.questions):
+        duplicate = any(
+            q.id == question.id or (q.kind is question.kind and q.text == question.text)
+            for q in self.questions
+        )
+        if duplicate:
             return False
         self.questions.append(question)
         return True
