@@ -64,7 +64,7 @@ def test_a_repo_with_no_package_json_resolves_to_itself(tmp_path: Path):
 
     Previously this escaped the repository entirely.
     """
-    repo = _repo(tmp_path, "hireshark")
+    repo = _repo(tmp_path, "backend-service")
     (repo / "src").mkdir()
 
     assert QaPaths.find(repo / "src").root == repo
