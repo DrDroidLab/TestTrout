@@ -31,12 +31,11 @@ from testtrout.domain.config import (
     EntrypointKind,
     ExternalRule,
     IsolationStrategy,
-    ModelProvider,
     Permission,
     TestUser,
 )
 from testtrout.domain.observation import ProbeResult
-from testtrout.domain.requirements import Plan
+from testtrout.domain.requirements import Requirement
 from testtrout.domain.surface import ScanResult
 from testtrout.store import QaPaths, read_model, write_model
 
@@ -44,11 +43,6 @@ ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # What each provider's own SDK looks for. Using these means a key already
 # exported for another tool works without being re-entered.
-DEFAULT_KEY_VAR: dict[ModelProvider, str] = {
-    ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
-    ModelProvider.OPENAI: "OPENAI_API_KEY",
-    ModelProvider.KIMI: "MOONSHOT_API_KEY",
-}
 
 
 class SettingsError(ValueError):
@@ -57,10 +51,11 @@ class SettingsError(ValueError):
 
 @dataclass
 class ConfigView:
-    """Configuration plus everything needed to render and reason about it."""
+    """Configuration, plus which of its referenced variables have values."""
 
     config: Config
-    plan: Plan
+    requirements: list[Requirement] = field(default_factory=list)
+    """Variables the *application* reads, discovered by reading its source."""
     env_present: dict[str, bool] = field(default_factory=dict)
     """Which referenced environment variables have a value. Names only —
     values are never read out of here."""
@@ -70,11 +65,7 @@ class ConfigView:
         return {
             "config": self.config.model_dump(mode="json"),
             "env_present": self.env_present,
-            "requirements": [r.model_dump(mode="json") for r in self.plan.requirements],
-            "readiness": [
-                r.model_dump(mode="json") | {"next_step": r.next_step} for r in self.plan.readiness
-            ],
-            "capabilities": [c.value for c in self.plan.available],
+            "requirements": [r.model_dump(mode="json") for r in self.requirements],
         }
 
 
@@ -94,8 +85,6 @@ def _relevant_names(config: Config, scan: ScanResult | None) -> list[str]:
         config.supabase.anon_key,
         config.supabase.service_role_key,
         config.supabase.url,
-        config.model.api_key,
-        config.model.base_url,
         *[u.email for u in config.test_users],
         *[u.password for u in config.test_users],
     ]
@@ -103,8 +92,6 @@ def _relevant_names(config: Config, scan: ScanResult | None) -> list[str]:
         value.removeprefix("env:") for value in referenced if value and value.startswith("env:")
     }
 
-    # The provider key, whether or not it has been wired up yet.
-    names.add(DEFAULT_KEY_VAR[config.model.provider])
     names.update({"SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"})
 
     # Per-role account variables, so the Setup panel can show their status.
@@ -135,7 +122,6 @@ def probe_of(paths: QaPaths, config: Config) -> ProbeResult | None:
 
 def view(paths: QaPaths) -> ConfigView:
     """Current configuration, what it needs, and what it can already do."""
-    from testtrout.planning.readiness import assess
     from testtrout.store import load_dotenv
 
     load_dotenv(paths.root)
@@ -143,7 +129,7 @@ def view(paths: QaPaths) -> ConfigView:
     scan = read_model(paths.surfaces, ScanResult) if paths.surfaces.is_file() else None
     return ConfigView(
         config=config,
-        plan=assess(config, scan, probe_of(paths, config)),
+        requirements=list(scan.requirements) if scan else [],
         env_present={name: bool(os.environ.get(name)) for name in _relevant_names(config, scan)},
     )
 
@@ -164,8 +150,6 @@ def apply(paths: QaPaths, patch: dict[str, Any]) -> Config:
         _apply_login(config, patch["login"] or {})
     if "supabase" in patch:
         _apply_supabase(config, patch["supabase"] or {})
-    if "model" in patch:
-        _apply_model(config, patch["model"] or {})
     if "substitution" in patch:
         config.substitution.external = [
             ExternalRule(name=str(item.get("name", "")), match=str(item.get("match", "")))
@@ -248,22 +232,6 @@ def _apply_supabase(config: Config, patch: dict[str, Any]) -> None:
         except ValueError as exc:
             raise SettingsError(f"unknown isolation strategy {patch['isolation']!r}") from exc
 
-
-def _apply_model(config: Config, patch: dict[str, Any]) -> None:
-    if patch.get("provider"):
-        try:
-            config.model.provider = ModelProvider(str(patch["provider"]))
-        except ValueError as exc:
-            raise SettingsError(f"unknown provider {patch['provider']!r}") from exc
-    if "model" in patch:
-        config.model.model = str(patch["model"] or "") or None
-    if "base_url" in patch:
-        config.model.base_url = str(patch["base_url"] or "") or None
-    if "api_key_var" in patch:
-        # Default to the variable the provider's own SDK already looks for, so a
-        # key the developer exported for other tools is picked up automatically.
-        name = patch["api_key_var"] or DEFAULT_KEY_VAR[config.model.provider]
-        config.model.api_key = _reference(name)
 
 
 def _reference(name: Any) -> str:

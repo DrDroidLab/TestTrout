@@ -127,10 +127,6 @@ class ProjectOverview(BaseModel):
     apis: list[ApiSummary] = Field(default_factory=list)
     transactions: list[TransactionSummary] = Field(default_factory=list)
     coverage: CoverageEstimate = Field(default_factory=CoverageEstimate)
-    needs_from_you: list[str] = Field(
-        default_factory=list,
-        description="What the tool cannot determine alone, in one line each.",
-    )
 
     @property
     def total_surfaces(self) -> int:

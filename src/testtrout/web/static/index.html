@@ -8,313 +8,174 @@
   :root {
     --bg: #ffffff; --panel: #f7f8fa; --panel-2: #eef1f5; --border: #dde3ea;
     --text: #1d2530; --muted: #66748a; --accent: #2563eb;
-    --critical: #b91c1c; --high: #b45309; --medium: #0e7490; --low: #64748b;
-    --pass: #15803d; --fail: #b91c1c; --warn: #b45309; --incon: #7c3aed;
-    --radius: 8px;
+    --pass: #15803d; --fail: #b91c1c; --warn: #b45309;
+    --radius: 10px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1319; --panel: #161b23; --panel-2: #1c232d; --border: #2a3441;
       --text: #e4e9f0; --muted: #8b98ad; --accent: #60a5fa;
-      --critical: #f87171; --high: #fbbf24; --medium: #22d3ee; --low: #94a3b8;
-      --pass: #4ade80; --fail: #f87171; --warn: #fbbf24; --incon: #c084fc;
+      --pass: #4ade80; --fail: #f87171; --warn: #fbbf24;
     }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; background: var(--bg); color: var(--text); display: flex;
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
-  a { color: var(--accent); }
 
-  header {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  /* ------------------------------------------------------------ sidebar */
+  aside {
+    width: 280px; flex: none; border-right: 1px solid var(--border);
+    background: var(--panel); display: flex; flex-direction: column; height: 100vh;
   }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -0.2px; }
-  header .path { color: var(--muted); font-size: 12px; }
-  header .spacer { flex: 1; }
-
-  nav { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border); }
-  nav button {
-    background: none; border: none; border-bottom: 2px solid transparent;
-    color: var(--muted); padding: 10px 14px; cursor: pointer; font-size: 13px;
-    font-family: inherit;
+  aside header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
+  aside h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -0.2px; }
+  aside .project { color: var(--muted); font-size: 12px; margin-top: 3px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-body { flex: 1; overflow-y: auto; padding: 12px; }
+  .side-label {
+    color: var(--muted); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.6px; margin: 6px 4px 8px;
   }
-  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
-  nav button:hover { color: var(--text); }
-
-  #shell { transition: margin-right 0.15s ease; }
-  body.drawer-open #shell { margin-right: 400px; }
-  main { padding: 20px 24px 60px; max-width: 1100px; }
-  section { display: none; }
-  section.active { display: block; }
-  h2.title { font-size: 17px; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.2px; }
-  p.lede { color: var(--muted); margin: 0 0 18px; font-size: 13px; max-width: 62ch; }
-  .stack > * + * { margin-top: 10px; }
-
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 14px;
+  .art {
+    display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: 8px;
+    padding: 9px 10px; cursor: pointer; color: inherit; font: inherit; margin-bottom: 2px;
   }
-  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .card .value { font-size: 26px; font-weight: 600; margin-top: 4px; letter-spacing: -0.5px; }
-  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
-
-  .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
-  .bar > div { height: 100%; background: var(--accent); }
-
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th {
-    text-align: left; font-weight: 500; color: var(--muted); font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    padding: 6px 10px; border-bottom: 1px solid var(--border);
+  .art:hover { background: var(--panel-2); }
+  .art.on { background: var(--panel-2); border-color: var(--border); }
+  .art:disabled { opacity: 0.4; cursor: default; }
+  .art .glyph { font-size: 15px; line-height: 1.2; }
+  .art .name { font-weight: 500; font-size: 13px; }
+  .art .sub { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+  .art .count {
+    margin-left: auto; background: var(--warn); color: #fff; border-radius: 9px;
+    font-size: 10.5px; padding: 0 6px; line-height: 17px; font-weight: 600;
   }
-  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tr.clickable { cursor: pointer; }
-  tr.clickable:hover td { background: var(--panel); }
+  aside footer { padding: 10px 12px; border-top: 1px solid var(--border); }
 
-  .pill {
-    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
-    font-weight: 500; white-space: nowrap;
+  /* --------------------------------------------------------------- main */
+  main { flex: 1; display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+  .chat { flex: 1; overflow-y: auto; padding: 26px 0 20px; }
+  .thread { max-width: 680px; margin: 0 auto; padding: 0 24px; }
+  .msg { display: flex; gap: 11px; margin-bottom: 18px; }
+  .msg .who {
+    width: 24px; height: 24px; flex: none; border-radius: 6px; font-size: 13px;
+    display: grid; place-items: center; background: var(--panel-2);
   }
-  .critical { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
-  .high     { color: var(--high);     background: color-mix(in srgb, var(--high) 14%, transparent); }
-  .medium   { color: var(--medium);   background: color-mix(in srgb, var(--medium) 14%, transparent); }
-  .low      { color: var(--low);      background: color-mix(in srgb, var(--low) 16%, transparent); }
-  .pass, .certified, .passed { color: var(--pass); background: color-mix(in srgb, var(--pass) 14%, transparent); }
-  .fail, .assertion_failure  { color: var(--fail); background: color-mix(in srgb, var(--fail) 14%, transparent); }
-  .warning, .draft, .flake, .contract_mismatch, .quarantined, .timeout {
-    color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-  .inconclusive, .auth_failure, .environment_failure, .dependency_failure {
-    color: var(--incon); background: color-mix(in srgb, var(--incon) 14%, transparent); }
-  .approved { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
-  .rejected, .skipped { color: var(--muted); background: var(--panel-2); }
+  .msg .body { min-width: 0; flex: 1; padding-top: 1px; }
+  .msg .body p { margin: 0 0 6px; }
+  .msg .body p:last-child { margin-bottom: 0; }
+  .msg.you .body { color: var(--muted); }
+  .msg .lines { color: var(--muted); font-size: 12.5px; }
+  .msg .lines div { padding: 1px 0; }
+  .msg .lines div.good { color: var(--pass); }
+  .msg .lines div.bad { color: var(--fail); }
 
-  button.action {
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button.act {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 12.5px;
-    font-family: inherit;
+    border-radius: 7px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px;
   }
-  button.action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  button.action:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button.act:disabled { opacity: 0.45; cursor: not-allowed; }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.primary:hover:not(:disabled) { color: #fff; opacity: 0.9; }
 
-  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
+  /* -------------------------------------------------------------- panel */
+  .panel {
+    border-top: 1px solid var(--border); background: var(--panel);
+    max-height: 58vh; overflow-y: auto; display: none;
+  }
+  .panel.open { display: block; }
+  .panel .inner { max-width: 900px; margin: 0 auto; padding: 18px 24px 28px; }
+  .panel h2 { font-size: 14px; margin: 0 0 2px; }
+  .panel .close { float: right; }
+  h3.sec { font-size: 12px; color: var(--muted); text-transform: uppercase;
+           letter-spacing: 0.5px; margin: 20px 0 6px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   .muted { color: var(--muted); }
-  .note {
-    border-left: 2px solid var(--accent); padding: 6px 0 6px 11px;
-    margin: 8px 0; color: var(--muted); font-size: 13px;
+  .empty { color: var(--muted); padding: 26px 0; text-align: center; }
+
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .ok   { color: var(--pass); background: color-mix(in srgb, var(--pass) 14%, transparent); }
+  .bad  { color: var(--fail); background: color-mix(in srgb, var(--fail) 14%, transparent); }
+  .wait { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .dim  { color: var(--muted); background: var(--panel-2); }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-weight: 500; margin-bottom: 2px; }
+  .field .why { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  .field .ev { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+  input[type=text], input[type=password] {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 13px;
   }
-  .warnbox {
-    border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
-    background: color-mix(in srgb, var(--warn) 7%, transparent);
-    border-radius: var(--radius); padding: 10px 13px; margin: 12px 0; font-size: 13px;
-  }
-  .detail { background: var(--panel); border-radius: 6px; padding: 10px 12px; margin-top: 6px; }
-  .detail ul { margin: 4px 0 0; padding-left: 18px; }
-  .detail li { margin: 2px 0; color: var(--muted); }
+  .pair { display: flex; gap: 8px; }
   pre {
-    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
-    padding: 10px 12px; overflow-x: auto; font-size: 12.5px; margin: 8px 0;
-  }
-
-  /* Progress lives on the right, not the bottom: a build runs one test at a
-     time for minutes, and a strip along the bottom shows four lines of it. */
-  #drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 400px;
-    background: var(--panel); border-left: 1px solid var(--border);
-    display: none; flex-direction: column; z-index: 20;
-  }
-  body.drawer-open #drawer { display: flex; }
-  #drawer .head {
-    display: flex; align-items: center; gap: 9px; padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-  }
-  #drawer .head strong { font-size: 13px; }
-  #log-lines { flex: 1; overflow-y: auto; padding: 10px 16px 20px; }
-  #log-lines .line {
-    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; padding: 2px 0;
-    white-space: pre-wrap; word-break: break-word; color: var(--muted);
-  }
-  #log-lines .line.step { color: var(--text); margin-top: 8px; }
-  #log-lines .line.good { color: var(--pass); }
-  #log-lines .line.bad { color: var(--fail); }
-  #log-lines .line.error { color: var(--fail); }
-  #drawer .past {
-    border-top: 1px solid var(--border); padding: 10px 16px; max-height: 34%;
-    overflow-y: auto;
-  }
-  #drawer .past .row {
-    display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 0;
-    cursor: pointer;
-  }
-  #drawer .past .row:hover { color: var(--accent); }
-  .spinner {
-    width: 11px; height: 11px; border: 2px solid var(--border);
-    border-top-color: var(--accent); border-radius: 50%;
-    animation: spin 0.7s linear infinite; display: inline-block;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .empty { color: var(--muted); padding: 34px 0; text-align: center; }
-
-  /* One test, and whatever is flagged against it. */
-  .test {
-    border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--panel); padding: 11px 13px;
-  }
-  .test.flagged { border-left: 3px solid var(--warn); }
-  .test.failing { border-left-color: var(--fail); }
-  .test.passing { border-left: 3px solid var(--pass); }
-  .test .top { display: flex; gap: 9px; align-items: baseline; }
-  .test .why { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
-  .test .why.bad { color: var(--fail); }
-  .ask { display: flex; gap: 7px; margin-top: 8px; }
-  .ask input {
-    flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px;
-  }
-  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
-  .filters button.on { border-color: var(--accent); color: var(--accent); }
-</style>
-
-<style>
-  .repopicker { display:flex; align-items:center; gap:8px; }
-  select.repo {
-    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 13px; max-width: 280px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
+    padding: 9px 11px; overflow-x: auto; font-size: 12.5px; margin: 4px 0 0;
   }
   dialog {
     border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
-    color: var(--text); padding: 20px; max-width: 560px; width: 92%;
+    color: var(--text); padding: 20px; max-width: 520px; width: 92%;
   }
   dialog::backdrop { background: rgba(0,0,0,0.5); }
   dialog h3 { margin: 0 0 4px; font-size: 15px; }
-  dialog input[type=text] {
-    width: 100%; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
-    font: inherit; font-size: 13px; margin-top: 6px;
+  .spinner {
+    width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block;
   }
-  .tabs { display:flex; gap:4px; margin: 14px 0 10px; }
-  .tabs button { font-size: 12.5px; }
-  .repolist { max-height: 260px; overflow-y: auto; margin-top: 10px; }
-  .repolist div.row {
-    display:flex; gap:10px; align-items:center; padding: 6px 8px; border-radius: 6px;
-    cursor: pointer;
-  }
-  .repolist div.row:hover { background: var(--panel); }
-  .spark { display:flex; gap:3px; align-items:flex-end; height: 26px; margin-top: 8px; }
-  .spark i { width: 7px; border-radius: 2px; display:block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>🐟 TestTrout</h1>
-  <div class="repopicker">
-    <select class="repo" id="repo-select"></select>
-    <button class="action" id="link-btn">Add project</button>
+<aside>
+  <header>
+    <h1>🐟 TestTrout</h1>
+    <div class="project" id="project-name">no project</div>
+  </header>
+  <div class="side-body">
+    <div class="side-label">Artifacts</div>
+    <div id="artifacts"></div>
   </div>
-  <span class="spacer"></span>
-  <span id="safety"></span>
-  <span class="muted mono" id="version"></span>
-</header>
-
-<div id="shell">
-<nav>
-  <button data-tab="report" class="active">Report</button>
-  <button data-tab="tests">Tests <span id="t-badge"></span></button>
-  <button data-tab="setup">Setup</button>
-  <span style="flex:1"></span>
-  <button id="drawer-toggle" style="border-bottom-color:transparent">Progress</button>
-</nav>
+  <footer>
+    <select id="project-select" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px"></select>
+    <button class="act" id="add-btn" style="width:100%;margin-top:6px">Add a project</button>
+  </footer>
+</aside>
 
 <main>
-  <section id="report" class="active">
-    <h2 class="title">What this project is, and what needs testing</h2>
-    <p class="lede">Read from your code. Scan again any time — the second scan reports
-       what moved rather than reprinting the list.</p>
-    <div class="toolbar">
-      <button class="action primary" data-act="scan">Scan</button>
-      <span class="muted" style="font-size:12.5px" id="scan-hint"></span>
-    </div>
-    <div class="grid" id="cards"></div>
-    <div id="report-body"></div>
-  </section>
-
-  <section id="tests">
-    <h2 class="title">Tests</h2>
-    <p class="lede">Each test is written, then run against your deployment before the next
-       one starts. Only a test that passes is kept; anything failing or unanswered is
-       flagged here against the test it belongs to.</p>
-    <div class="toolbar">
-      <button class="action primary" data-act="build">Generate tests</button>
-      <button class="action" data-act="run">Run all</button>
-      <span class="spacer" style="flex:1"></span>
-      <span class="filters" id="test-filters"></span>
-    </div>
-    <div id="tests-body"></div>
-  </section>
-
-  <section id="setup"><div id="setup-body"></div></section>
+  <div class="chat"><div class="thread" id="thread"></div></div>
+  <div class="panel" id="panel"><div class="inner" id="panel-body"></div></div>
 </main>
-</div>
 
-<dialog id="link-dialog">
+<dialog id="add-dialog">
   <h3>Add a project</h3>
-  <p class="muted" style="font-size:13px;margin:0">
-    A repository and the URL it is deployed at. The folder is never modified;
-    a GitHub repository is cloned into <code>~/.testtrout/repos</code> first.
+  <p class="muted" style="font-size:13px;margin:0 0 12px">
+    A folder on this machine. It is read, never modified.
   </p>
-  <div class="tabs">
-    <button class="action" data-link-tab="local">Local folder</button>
-    <button class="action" data-link-tab="github">GitHub</button>
-  </div>
-  <div id="link-local">
-    <input type="text" id="link-path" placeholder="/path/to/your/repository" autocomplete="off">
-  </div>
-  <div id="link-github" style="display:none">
-    <div id="gh-status" class="muted" style="font-size:13px"></div>
-    <div class="repolist" id="gh-repos"></div>
-  </div>
-  <input type="text" id="link-url" placeholder="https://your-app.vercel.app  (deployment URL)"
-         autocomplete="off" style="margin-top:10px">
-  <div class="muted" style="font-size:12px;margin-top:6px">
-    Both halves matter: the repository says what your product is supposed to do,
-    the deployment says what it actually does. Read-only until you mark it
-    disposable under Setup.
-  </div>
-  <div class="toolbar" style="margin-bottom:0">
-    <span class="spacer" style="flex:1"></span>
-    <button class="action" id="link-cancel">Cancel</button>
-    <button class="action primary" id="link-confirm">Add project</button>
+  <input type="text" id="add-path" placeholder="/path/to/your/repository" autocomplete="off">
+  <input type="text" id="add-url" placeholder="https://your-app.vercel.app  (optional, but I can do much more with it)"
+         autocomplete="off" style="margin-top:8px">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    <button class="act" id="add-cancel">Cancel</button>
+    <button class="act primary" id="add-confirm">Add</button>
   </div>
 </dialog>
 
-<aside id="drawer">
-  <div class="head">
-    <span id="log-state"></span>
-    <strong id="log-name">Progress</strong>
-    <span class="spacer" style="flex:1"></span>
-    <button class="action" id="drawer-close">Hide</button>
-  </div>
-  <div id="log-lines"></div>
-  <div class="past">
-    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Earlier</div>
-    <div id="past-jobs"></div>
-  </div>
-</aside>
-
 <script>
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const pill = (v) => `<span class="pill ${esc(v)}">${esc(String(v).replace(/_/g, ' '))}</span>`;
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-let state = { repos: [], repoId: null };
+const state = { projects: [], id: null, open: null, busy: false };
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -325,809 +186,397 @@ async function api(path, options) {
   return res.json();
 }
 
-// ---------------------------------------------------------------- tabs
+// ------------------------------------------------------------------ chat
 
-document.querySelectorAll('nav button[data-tab]').forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll('nav button[data-tab]').forEach((x) => x.classList.remove('active'));
-    document.querySelectorAll('section').forEach((x) => x.classList.remove('active'));
-    b.classList.add('active');
-    $(b.dataset.tab).classList.add('active');
-    render(b.dataset.tab);
-  };
-});
-
-// --------------------------------------------------------------- repos
-
-$('repo-select').onchange = (e) => {
-  state.repoId = Number(e.target.value) || null;
-  localStorage.setItem('trout.repo', state.repoId);
-  loadRepo();
-};
-
-function renderRepoPicker() {
-  const sel = $('repo-select');
-  if (!state.repos.length) {
-    sel.innerHTML = '<option>no repositories linked</option>';
-    sel.disabled = true;
-    return;
-  }
-  sel.disabled = false;
-  sel.innerHTML = state.repos.map((r) =>
-    `<option value="${r.id}" ${r.id === state.repoId ? 'selected' : ''}>` +
-    `${esc(r.name)}${r.exists ? '' : ' (missing)'}${r.busy ? ' · ' + esc(r.busy_with) + '…' : ''}` +
-    `</option>`).join('');
+function say(text, { actions = [], lines = false } = {}) {
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `
+    <div class="who">🐟</div>
+    <div class="body">
+      ${lines ? '<div class="lines"></div>' : `<p>${text}</p>`}
+      ${actions.length ? `<div class="acts">${actions.map((a) =>
+        `<button class="act ${a.primary ? 'primary' : ''}" data-do="${a.id}">${esc(a.label)}</button>`
+      ).join('')}</div>` : ''}
+    </div>`;
+  $('thread').appendChild(div);
+  div.querySelectorAll('[data-do]').forEach((b) => {
+    b.onclick = () => ACTIONS[b.dataset.do]?.(b);
+  });
+  scroll();
+  return div;
 }
 
-// ---------------------------------------------------------- link dialog
-
-const dialog = $('link-dialog');
-$('link-btn').onclick = () => { dialog.showModal(); loadGithub(); };
-$('link-cancel').onclick = () => dialog.close();
-document.querySelectorAll('[data-link-tab]').forEach((b) => {
-  b.onclick = () => {
-    const github = b.dataset.linkTab === 'github';
-    $('link-local').style.display = github ? 'none' : '';
-    $('link-github').style.display = github ? '' : 'none';
-  };
-});
-
-let selectedRemote = null;
-async function loadGithub() {
-  $('gh-status').textContent = 'checking for a GitHub token…';
-  try {
-    const d = await api('/api/github/repos');
-    if (!d.authenticated) {
-      $('gh-status').innerHTML = esc(d.error || 'No token found.') +
-        ' Set <code>GITHUB_TOKEN</code>, run <code>gh auth login</code>, or ' +
-        '<code>trout github-login</code>.';
-      $('gh-repos').innerHTML = '';
-      return;
-    }
-    $('gh-status').textContent = `signed in as ${d.account}`;
-    $('gh-repos').innerHTML = d.repos.map((r) =>
-      `<div class="row" data-slug="${esc(r.full_name)}">
-         <strong>${esc(r.full_name)}</strong>
-         ${r.private ? '<span class="pill low">private</span>' : ''}
-         <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.description)}</span>
-       </div>`).join('');
-    $('gh-repos').querySelectorAll('.row').forEach((row) => {
-      row.onclick = () => {
-        selectedRemote = row.dataset.slug;
-        $('gh-repos').querySelectorAll('.row').forEach((x) =>
-          x.style.background = x === row ? 'var(--panel-2)' : '');
-      };
-    });
-  } catch (e) {
-    $('gh-status').textContent = e.message;
-  }
+function youSay(text) {
+  const div = document.createElement('div');
+  div.className = 'msg you';
+  div.innerHTML = `<div class="who">🙂</div><div class="body"><p>${esc(text)}</p></div>`;
+  $('thread').appendChild(div);
+  scroll();
 }
 
-$('link-confirm').onclick = async () => {
-  const usingGithub = $('link-github').style.display !== 'none';
-  const body = usingGithub
-    ? { source: 'github', slug: selectedRemote }
-    : { source: 'local', path: $('link-path').value.trim() };
-  body.deployment_url = $('link-url').value.trim();
-  try {
-    const repo = await api('/api/repos', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    dialog.close();
-    state.repoId = repo.id;
-    localStorage.setItem('trout.repo', repo.id);
-    await loadRepos();
-    await loadRepo();
-    openDrawer('Scanning');
-  } catch (e) { alert(e.message); }
+const scroll = () => {
+  const chat = document.querySelector('.chat');
+  chat.scrollTop = chat.scrollHeight;
 };
 
-// -------------------------------------------------------------- actions
+/** Colour a streamed line by what it says, so a long build stays readable. */
+function pushLine(box, text) {
+  const div = document.createElement('div');
+  div.className = /kept|proven|loaded|answered/i.test(text) ? 'good'
+                : /held back|could not|failed|refus/i.test(text) ? 'bad' : '';
+  div.textContent = text;
+  box.appendChild(div);
+  scroll();
+}
 
-document.querySelectorAll('[data-act]').forEach((b) => {
-  b.onclick = async () => {
-    if (!state.repoId) { alert('Link a repository first.'); return; }
-    const kind = b.dataset.act;
-    const options = kind === 'propose' ? { limit: 5 } : {};
-    try {
-      const job = await api(`/api/repos/${state.repoId}/jobs`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, options }),
-      });
-      openDrawer(kind === 'build' ? 'Generating tests'
-        : kind === 'run' ? 'Running tests' : 'Scanning', job.id);
-    } catch (e) { alert(e.message); }
-  };
-});
+// --------------------------------------------------------------- actions
 
-function openDrawer(name, jobId) {
-  document.body.classList.add('drawer-open');
-  $('log-name').textContent = name ? `${name}…` : 'Progress';
-  $('log-lines').innerHTML = '';
-  $('log-state').innerHTML = '<span class="spinner"></span>';
+const ACTIONS = {
+  look: () => start('understand', 'Reading the code and checking the deployment…'),
+  build: () => start('build', 'Writing the baseline…'),
+  run: () => start('run', 'Re-running the baseline…'),
+  facts: () => openArtifact('facts'),
+  plan: () => openArtifact('plan'),
+  suite: () => openArtifact('suite'),
+};
+
+async function start(kind, headline) {
+  if (!state.id || state.busy) return;
   setBusy(true);
-  if (jobId) follow(jobId);
-  else pollLatestJob(name);
+  const bubble = say(headline);
+  const box = document.createElement('div');
+  box.className = 'lines';
+  bubble.querySelector('.body').appendChild(box);
+
+  try {
+    const job = await api(`/api/repos/${state.id}/jobs`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, options: {} }),
+    });
+    await follow(job.id, box);
+  } catch (e) {
+    pushLine(box, e.message);
+  }
+  setBusy(false);
+  await refresh();
+  await nextStep();
 }
 
-$('drawer-toggle').onclick = () => document.body.classList.toggle('drawer-open');
-$('drawer-close').onclick = () => document.body.classList.remove('drawer-open');
-
-async function pollLatestJob(kind) {
-  const d = await api(`/api/jobs?repo_id=${state.repoId}&limit=5`).catch(() => null);
-  const job = d && d.jobs.find((j) => j.kind === kind);
-  if (job) follow(job.id);
+function follow(jobId, box) {
+  return new Promise((resolve) => {
+    const source = new EventSource(`/api/jobs/${jobId}/stream`);
+    source.onmessage = (event) => {
+      const line = JSON.parse(event.data);
+      if (line.done) {
+        source.close();
+        if (line.error) pushLine(box, line.error);
+        resolve();
+        return;
+      }
+      pushLine(box, line.message);
+    };
+    source.onerror = () => { source.close(); resolve(); };
+  });
 }
 
 function setBusy(busy) {
-  document.querySelectorAll('[data-act]').forEach((b) => { b.disabled = busy; });
-}
-
-/** Colour a progress line by what it says, so a long build stays readable. */
-function logLine(text, className) {
-  const div = document.createElement('div');
-  div.className = `line ${className || (
-    /^\s*kept:/.test(text) ? 'good'
-    : /^\s*(held back|could not|no emitter|refus)/.test(text) ? 'bad'
-    : /^\S/.test(text) ? 'step' : '')}`;
-  div.textContent = text;
-  $('log-lines').appendChild(div);
-  $('log-lines').scrollTop = $('log-lines').scrollHeight;
-}
-
-function follow(jobId) {
-  const source = new EventSource(`/api/jobs/${jobId}/stream`);
-  source.onmessage = (event) => {
-    const line = JSON.parse(event.data);
-    if (line.done) {
-      source.close();
-      $('log-state').textContent = line.state === 'failed' ? '✕' : '✓';
-      $('log-name').textContent = $('log-name').textContent.replace(/…$/, '');
-      if (line.error) logLine(line.error, 'error');
-      setBusy(false);
-      loadRepos(); loadRepo();
-      return;
-    }
-    logLine(line.message);
-    // The tests list is the point of a build, so let it fill in as it happens
-    // rather than all at once when the job ends.
-    if (/^\s*(kept|held back):/.test(line.message)) loadTests();
-  };
-  source.onerror = () => { source.close(); setBusy(false); loadRepo(); };
-}
-
-// --------------------------------------------------------------- render
-
-function render(tab) {
-  renderChrome();
-  ({ report: renderReport, tests: renderTests, setup: renderSetup }[tab] || (() => {}))();
-}
-
-/** The bits outside any one tab: safety flag, badge, past jobs. */
-function renderChrome() {
-  const o = state.overview || {};
-  const writable = (o.entrypoints || []).filter((e) => e.writable);
-  $('safety').innerHTML = !state.repoId ? ''
-    : (o.entrypoints || []).length === 0
-      ? '<span class="pill low">no deployment</span>'
-      : writable.length ? `<span class="pill high">${writable.length} writable</span>`
-                        : '<span class="pill pass">read-only</span>';
-
-  const counts = (state.tests || {}).counts || {};
-  const attention = (counts.failing || 0) + (counts.needs_info || 0);
-  $('t-badge').innerHTML = attention
-    ? `<span class="pill warning" style="margin-left:4px">${attention}</span>` : '';
-
-  const jobs = (state.jobs || {}).jobs || [];
-  $('past-jobs').innerHTML = jobs.slice(0, 12).map((j) => `
-    <div class="row" data-job="${j.id}">
-      <span class="pill ${j.state === 'done' ? 'pass' : j.state === 'failed' ? 'fail' : 'warning'}">${
-        j.state === 'done' ? '✓' : j.state === 'failed' ? '✕' : j.state}</span>
-      <span class="mono">${esc(j.kind)}</span>
-      <span class="muted" style="flex:1;text-align:right">${
-        j.duration_seconds != null ? j.duration_seconds + 's' : ''}</span>
-    </div>`).join('') || '<div class="muted" style="font-size:12px">nothing yet</div>';
-
-  document.querySelectorAll('[data-job]').forEach((row) => {
-    row.onclick = async () => {
-      const job = await api(`/api/jobs/${row.dataset.job}`).catch(() => null);
-      if (!job) return;
-      $('log-name').textContent = job.kind;
-      $('log-state').textContent = job.state === 'failed' ? '✕' : '✓';
-      $('log-lines').innerHTML = '';
-      (job.log || []).forEach((l) => logLine(l));
-      if (job.error) logLine(job.error, 'error');
-    };
-  });
-}
-
-function renderReport() {
-  const pr = state.project || {};
-
-  if (!state.repoId) {
-    $('cards').innerHTML = '';
-    $('report-body').innerHTML =
-      '<div class="empty">No project yet. Press <strong>Add project</strong> above.</div>';
-    $('scan-hint').textContent = '';
-    return;
-  }
-  if (!pr.scanned) {
-    $('cards').innerHTML = '';
-    $('report-body').innerHTML =
-      '<div class="empty">Press <strong>Scan</strong> to find out what this project does.</div>';
-    $('scan-hint').textContent = 'Reads your code. No API key, no network.';
-    return;
-  }
-  $('scan-hint').textContent = '';
-
-  const c = pr.coverage || {};
-  const bar = (label, pct, covered, total, note) => `
-    <div class="card">
-      <div class="label">${label}</div>
-      <div class="value">${pct ?? 0}%</div>
-      <div class="bar"><div style="width:${pct ?? 0}%"></div></div>
-      <div class="sub">${covered ?? 0} of ${total ?? 0} tested${note ? ' · ' + note : ''}</div>
-    </div>`;
-
-  $('cards').innerHTML =
-    bar('Transactions', c.transactions_percent, c.transactions_covered, c.transactions_total,
-        'where regressions cost most') +
-    bar('Pages', c.pages_percent, c.pages_covered, c.pages_total) +
-    bar('APIs', c.apis_percent, c.apis_covered, c.apis_total);
-
-  const d = pr.delta || {};
-  const moved = (label, items) => !items?.length ? '' : `
-    <div class="note"><strong>${label} — ${items.length}</strong>
-      ${items.slice(0, 6).map((i) => `<div class="mono" style="font-size:12px">${esc(i)}</div>`).join('')}
-      ${items.length > 6 ? `<div style="font-size:12px">and ${items.length - 6} more</div>` : ''}
-    </div>`;
-
-  const needs = pr.needs_from_you || [];
-  const missing = d.still_missing || [];
-
-  $('report-body').innerHTML = `
-    <p style="font-size:15px;margin:18px 0 0">${esc(pr.summary || '')}</p>
-
-    ${needs.length ? `<div class="warnbox">
-      <strong>What TestTrout needs from you</strong>
-      <div class="muted" style="font-size:12.5px;margin-top:2px">Each of these unblocks tests.
-        Fill them in under <strong>Setup</strong>.</div>
-      ${needs.map((n) => `<div class="note">${esc(n)}</div>`).join('')}
-    </div>` : ''}
-
-    <div id="report-questions"></div>
-
-    ${d.has_changes ? `<h3 style="font-size:13px;margin:22px 0 0">Since your last scan</h3>
-      ${moved('New in the code', d.new_areas)}
-      ${moved('Now covered by a test', d.newly_covered)}
-      ${moved('No longer in the code', d.gone)}` : ''}
-
-    <h3 style="font-size:13px;margin:24px 0 2px">What needs testing
-      <span class="muted" style="font-weight:400">— ${missing.length} left, most worth doing
-      first. Covering a transaction usually covers its page and endpoints too.</span></h3>
-    ${missing.length ? `<table>${missing.slice(0, 25).map((m) => {
-      const [kind, ...rest] = m.split(' ');
-      return `<tr>
-        <td class="muted" style="width:110px">${esc(kind)}</td>
-        <td class="mono">${esc(rest.join(' '))}</td>
-      </tr>`; }).join('')}
-      ${missing.length > 25 ? `<tr><td colspan="2" class="muted">and ${missing.length - 25} more</td></tr>` : ''}
-      </table>
-      <div class="toolbar"><button class="action primary" data-goto="tests">Generate tests for these</button></div>`
-      : '<div class="note">Everything the scan found has a test.</div>'}
-
-    ${section('Transactions', pr.transactions, (t) => [
-      pill(t.criticality), t.covered,
-      `<strong>${esc(t.name)}</strong>
-       <div class="muted" style="font-size:12px">${esc((t.steps || []).join(' → '))}</div>`,
-      esc(t.how_to_test)])}
-    ${section('Pages', pr.pages, (x) => [
-      pill(x.criticality), x.covered, `<span class="mono">${esc(x.path)}</span>`,
-      `${x.reads} read · ${x.writes} write${x.behind_login ? ' · behind sign-in' : ''}`])}
-    ${section('APIs', pr.apis, (a) => [
-      pill(a.criticality), a.covered,
-      `<span class="mono">${esc((a.methods || []).join('/'))} ${esc(a.path)}</span>`,
-      a.changes_data ? 'changes data' : 'read only'])}`;
-
-  document.querySelectorAll('[data-goto]').forEach((b) => {
-    b.onclick = () => showTab(b.dataset.goto);
-  });
-  renderOpenQuestions();
+  state.busy = busy;
+  document.querySelectorAll('[data-do]').forEach((b) => { b.disabled = busy; });
 }
 
 /**
- * Questions that belong to the project rather than to one test.
+ * Say what to do next, based on what is actually true.
  *
- * Anything raised against a scenario is answered next to that test, where the
- * context is. What is left is about the project — a route that would not load,
- * a behaviour nobody has stated — and it has nowhere else to go.
+ * The whole interface is this function plus the artifacts. There is no wizard
+ * and no step counter — the state on disk decides what is worth suggesting.
  */
-function renderOpenQuestions() {
-  // Anything raised against a test is answered next to that test. Anything
-  // that is really a missing credential is already listed above and answered
-  // under Setup — repeating it here would be a third place to read the same
-  // sentence.
-  const open = ((state.questions || {}).open || []).filter(
-    (q) => !(q.subject || '').startsWith('scenario:') && q.kind !== 'missing_credential');
-  if (!open.length) { $('report-questions').innerHTML = ''; return; }
-
-  $('report-questions').innerHTML = `
-    <h3 style="font-size:13px;margin:24px 0 2px">Questions
-      <span class="muted" style="font-weight:400">— ${open.length}. Each takes a moment and
-      usually unblocks several tests.</span></h3>
-    <div class="stack">${open.map((q, i) => `
-      <div class="test ${q.blocks ? 'flagged' : ''}">
-        <div class="top">
-          <span class="pill ${q.blocks ? 'warning' : 'medium'}">${esc(q.label || q.kind)}</span>
-          <strong style="flex:1">${esc(q.text)}</strong>
-        </div>
-        ${q.context ? `<div class="why">${esc(q.context)}</div>` : ''}
-        ${q.unlocks ? `<div class="why" style="color:var(--accent)">unlocks: ${esc(q.unlocks)}</div>` : ''}
-        <div class="ask">
-          ${(q.choices || []).map((c) =>
-            `<button class="action" data-choice="${esc(q.id)}" data-text="${esc(c)}">${esc(c)}</button>`).join('')}
-          <input type="text" id="rq${i}" placeholder="your answer">
-          <button class="action primary" data-answer="${esc(q.id)}" data-input="rq${i}">Answer</button>
-          <button class="action" data-dismiss="${esc(q.id)}">Not relevant</button>
-        </div>
-      </div>`).join('')}</div>`;
-
-  document.querySelectorAll('[data-choice]').forEach((b) => {
-    b.onclick = () => submitAnswer(b.dataset.choice, b.dataset.text);
-  });
-  document.querySelectorAll('[data-answer]').forEach((b) => {
-    b.onclick = () => {
-      const value = $(b.dataset.input).value.trim();
-      if (value) submitAnswer(b.dataset.answer, value);
-    };
-  });
-  document.querySelectorAll('[data-dismiss]').forEach((b) => {
-    b.onclick = () => submitAnswer(b.dataset.dismiss, null, true);
-  });
-}
-
-/** One collapsible inventory section. Collapsed by default — it is reference. */
-function section(title, rows, cells) {
-  if (!rows?.length) return '';
-  const id = `sec-${title.toLowerCase()}`;
-  return `
-    <h3 style="font-size:13px;margin:24px 0 2px;cursor:pointer" onclick="toggle('${id}')">
-      ${title} (${rows.length})
-      <span class="muted" style="font-weight:400">— ${rows.filter((r) => r.covered).length} tested. Show</span>
-    </h3>
-    <div id="${id}" style="display:none"><table>${rows.map((r) => {
-      const [level, covered, main, note] = cells(r);
-      return `<tr>
-        <td style="width:100px">${level}</td>
-        <td style="width:70px">${covered ? '<span class="pill pass">tested</span>' : ''}</td>
-        <td>${main}</td>
-        <td class="muted" style="width:34%">${note}</td>
-      </tr>`; }).join('')}</table></div>`;
-}
-
-// ---------------------------------------------------------------- tests
-
-let testFilter = 'all';
-
-function renderTests() {
-  const d = state.tests || {};
-  const all = d.tests || [];
-  const counts = d.counts || {};
-
-  if (!state.repoId) {
-    $('tests-body').innerHTML = '<div class="empty">No project yet.</div>';
-    $('test-filters').innerHTML = '';
-    return;
-  }
-  if (!all.length) {
-    $('test-filters').innerHTML = '';
-    $('tests-body').innerHTML = `<div class="empty">
-      No tests yet. Press <strong>Generate tests</strong> — each one is written and run
-      against your deployment as it is created, and you can watch it happen in
-      <strong>Progress</strong>.</div>`;
-    return;
-  }
-
-  const buckets = [
-    ['all', 'All', all.length],
-    ['failing', 'Failing', counts.failing || 0],
-    ['needs_info', 'Needs you', counts.needs_info || 0],
-    ['blocked', 'Could not run', counts.blocked || 0],
-    ['untried', 'Not run yet', counts.untried || 0],
-    ['passing', 'Passing', counts.passing || 0],
-  ].filter(([key, , n]) => key === 'all' || n > 0);
-
-  if (!buckets.some(([k]) => k === testFilter)) testFilter = 'all';
-  $('test-filters').innerHTML = buckets.map(([key, label, n]) =>
-    `<button class="action ${key === testFilter ? 'on' : ''}" data-filter="${key}">${label} ${n}</button>`
-  ).join('');
-  document.querySelectorAll('[data-filter]').forEach((b) => {
-    b.onclick = () => { testFilter = b.dataset.filter; renderTests(); };
-  });
-
-  const shown = testFilter === 'all' ? all : all.filter((t) => t.state === testFilter);
-  $('tests-body').innerHTML = `<div class="stack">${shown.map((t, i) => `
-    <div class="test ${t.state === 'passing' ? 'passing' : t.flagged ? 'flagged' : ''} ${
-      t.state === 'failing' ? 'failing' : ''}">
-      <div class="top">
-        <span class="pill ${stateClass(t.state)}">${esc(t.label)}</span>
-        <strong style="flex:1">${esc(t.title)}</strong>
-        <span class="pill ${esc(t.criticality)}">${esc(t.criticality)}</span>
-        <button class="action" onclick="toggle('td${i}')">Details</button>
-      </div>
-      ${t.detail ? `<div class="why ${t.state === 'failing' ? 'bad' : ''}">${esc(t.detail)}</div>` : ''}
-      ${t.questions.length ? `<div class="ask">
-        <input type="text" id="tq${i}" placeholder="${esc(t.questions[0])}">
-        <button class="action primary" data-test-answer="${esc(t.id)}" data-input="tq${i}">Answer</button>
-      </div>` : ''}
-      <div id="td${i}" style="display:none" class="detail">
-        ${t.questions.length > 1 ? `<strong>Also unanswered</strong><ul>${
-          t.questions.slice(1).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
-        <div class="muted" style="font-size:12px">
-          ${esc(t.kind.replace(/_/g, ' '))}${t.classification ? ' · last result: ' + esc(t.classification.replace(/_/g, ' ')) : ''}
-        </div>
-        ${t.reproduce ? `<div class="muted mono" style="font-size:11.5px;margin-top:6px">${esc(t.reproduce)}</div>` : ''}
-        ${t.emitted_to ? `<div class="muted mono" style="font-size:11.5px;margin-top:4px">${esc(t.emitted_to)}</div>`
-          : '<div class="muted" style="font-size:12px;margin-top:4px">no test code generated yet</div>'}
-      </div>
-    </div>`).join('')}</div>`;
-
-  document.querySelectorAll('[data-test-answer]').forEach((b) => {
-    b.onclick = () => {
-      const value = $(b.dataset.input).value.trim();
-      if (value) answerForTest(b.dataset.testAnswer, value);
-    };
-  });
-}
-
-const stateClass = (s) => ({ passing: 'pass', failing: 'fail', needs_info: 'warning',
-                             blocked: 'inconclusive', untried: 'skipped' }[s] || 'low');
-
-/**
- * Answer a question raised against one test.
- *
- * The answer goes to the question queue if the question is tracked there, and
- * to the scenario either way — the scenario file is what the next build reads.
- */
-async function answerForTest(scenarioId, answer) {
-  const open = (state.questions || {}).open || [];
-  const match = open.find((q) => q.subject === scenarioId);
-  if (!match) {
-    alert('This one is recorded on the test itself. Edit its file under .trout/scenarios/ '
-          + '— the tool reads back what you write.');
-    return;
-  }
-  submitAnswer(match.id, answer);
-}
-
-let pendingSecrets = {};
-
-const keyVarFor = (p) => ({ anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY',
-                            kimi: 'MOONSHOT_API_KEY' }[p] || 'ANTHROPIC_API_KEY');
-
-function renderSetup() {
-  const c = state.config || {};
-  const cfg = c.config || {};
-  const present = c.env_present || {};
-  const readiness = c.readiness || [];
-  const reqs = (c.requirements || []).filter((r) => !r.optional);
-
-  const varRow = (label, name, hint) => `
-    <tr>
-      <td class="muted" style="width:210px">${esc(label)}</td>
-      <td>
-        <input type="password" data-secret="${esc(name)}" placeholder="${
-          present[name] ? '•••••••• (set — leave blank to keep)' : 'not set'
-        }" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
-        <div class="muted mono" style="font-size:11px;margin-top:3px">${esc(name)}${hint ? ' — ' + esc(hint) : ''}</div>
-      </td>
-    </tr>`;
-
-  $('setup-body').innerHTML = `
-    <div class="card" style="margin-bottom:14px">
-      <strong>What you can test right now</strong>
-      <div style="margin-top:8px">
-        ${readiness.map((r) => `
-          <div style="margin:6px 0">
-            ${r.ready ? '<span class="pill pass">ready</span>' : '<span class="pill warning">blocked</span>'}
-            <strong>${esc(r.capability.replace(/_/g, ' '))}</strong>
-            <div class="muted" style="font-size:12.5px">${esc(r.detail)}</div>
-            ${(r.missing || []).map((m) => `<div style="font-size:12.5px;color:var(--warn)">needs: ${esc(m)}</div>`).join('')}
-          </div>`).join('')}
-      </div>
-    </div>
-
-    ${reqs.length ? `<div class="card" style="margin-bottom:14px">
-      <strong>Credentials this app needs</strong>
-      <div class="muted" style="font-size:12.5px">Discovered by reading your source.</div>
-      <table>${reqs.map((r) => `<tr>
-        <td class="mono" style="width:230px">${esc(r.name)}</td>
-        <td>${esc(r.purpose)}
-          ${r.locations?.length ? `<div class="muted mono" style="font-size:11px">${esc(r.locations[0].file)}:${r.locations[0].line}</div>` : ''}</td>
-      </tr>`).join('')}</table>
-    </div>` : ''}
-
-    <div class="card" style="margin-bottom:14px">
-      <strong>Deployments</strong>
-      <div class="muted" style="font-size:12.5px">Where your app is running. Read-only unless you
-        say otherwise. Give the API URL separately if your backend is deployed on its own host —
-        otherwise every endpoint test asks the frontend for a path it does not serve.</div>
-      <table id="ep-table">
-        ${(cfg.entrypoints || []).map((e, i) => `
-          <tr>
-            <td style="width:150px"><input type="text" data-ep="name" data-i="${i}" value="${esc(e.name)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
-            <td>
-              <input type="text" data-ep="url" data-i="${i}" value="${esc(e.url)}" placeholder="https://your-app.vercel.app" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
-              <input type="text" data-ep="api_url" data-i="${i}" value="${esc(e.api_url || '')}" placeholder="API URL — only if the backend is deployed separately" style="width:100%;margin-top:5px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px">
-            </td>
-            <td style="width:230px">
-              <label style="font-size:12.5px;cursor:pointer">
-                <input type="checkbox" data-ep="disposable" data-i="${i}" ${e.disposable ? 'checked' : ''}>
-                data can be destroyed
-              </label>
-              <div class="muted" style="font-size:11px">unticked = writes are blocked</div>
-            </td>
-            <td style="width:40px"><button class="action" data-remove-ep="${i}">×</button></td>
-          </tr>`).join('')}
-      </table>
-      <div class="toolbar" style="margin-bottom:0"><button class="action" id="add-ep">Add deployment</button></div>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <strong>Sign-in</strong>
-      <div class="muted" style="font-size:12.5px">
-        Tests sign in through your app's own login form — no database credentials needed.
-        Run a probe and TestTrout finds the form once; correct it here if it gets it wrong.
-      </div>
-      <table>
-        <tr><td class="muted" style="width:210px">Login page</td>
-          <td><input type="text" id="login-path" value="${esc(cfg.login?.path || '/login')}" placeholder="/login" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
-        <tr><td class="muted">Form</td><td>
-          ${cfg.login?.email_selector
-            ? `<span class="pill pass">found</span> <span class="mono muted" style="font-size:11px">${esc(cfg.login.email_selector)}</span>`
-            : '<span class="pill warning">not located yet</span> <span class="muted" style="font-size:12.5px">run a probe</span>'}
-        </td></tr>
-      </table>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <strong>Supabase <span class="muted" style="font-weight:400">(optional)</span></strong>
-      <div class="muted" style="font-size:12.5px">
-        Not needed to write or run tests. Only fill this in if you want TestTrout to
-        reset the database between runs.
-      </div>
-      <table>
-        <tr><td class="muted" style="width:210px">Project URL</td>
-          <td><input type="text" id="sb-url" value="${esc(cfg.supabase?.url || '')}" placeholder="leave blank" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
-        ${varRow('Service-role key', 'SUPABASE_SERVICE_ROLE_KEY', 'seeding and reset only')}
-        <tr><td class="muted">Database isolation</td><td>
-          <select id="sb-isolation" class="repo" style="max-width:260px">
-            ${['scoped_seed', 'local_reset', 'branch'].map((v) =>
-              `<option value="${v}" ${cfg.supabase?.isolation === v ? 'selected' : ''}>${v}</option>`).join('')}
-          </select>
-          <div class="muted" style="font-size:11px;margin-top:3px">scoped_seed performs no reset — the default, and fine without Supabase access</div>
-        </td></tr>
-      </table>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <strong>Test accounts</strong>
-      <div class="muted" style="font-size:12.5px">Two minimum — proving user A cannot see user B's data needs a B.</div>
-      <table id="user-table">
-        ${(cfg.test_users || []).map((u, i) => `
-          <tr>
-            <td style="width:150px"><input type="text" data-user="role" data-i="${i}" value="${esc(u.role)}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
-            <td><input type="text" data-secret="TROUT_${esc(u.role.toUpperCase().replace(/-/g,'_'))}_EMAIL" placeholder="${present['TROUT_' + u.role.toUpperCase().replace(/-/g,'_') + '_EMAIL'] ? 'set — leave blank to keep' : 'email'}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
-            <td><input type="password" data-secret="TROUT_${esc(u.role.toUpperCase().replace(/-/g,'_'))}_PASSWORD" placeholder="${present['TROUT_' + u.role.toUpperCase().replace(/-/g,'_') + '_PASSWORD'] ? 'set — leave blank to keep' : 'password'}" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td>
-            <td style="width:40px"><button class="action" data-remove-user="${i}">×</button></td>
-          </tr>`).join('')}
-      </table>
-      <div class="toolbar" style="margin-bottom:0"><button class="action" id="add-user">Add account</button></div>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <strong>Model provider</strong>
-      <div class="muted" style="font-size:12.5px">Only for intent capture and scenario wording. Everything else works without it.</div>
-      <table>
-        <tr><td class="muted" style="width:210px">Provider</td><td>
-          <select id="model-provider" class="repo" style="max-width:260px">
-            ${['anthropic', 'openai', 'kimi'].map((v) =>
-              `<option value="${v}" ${cfg.model?.provider === v ? 'selected' : ''}>${v}</option>`).join('')}
-          </select></td></tr>
-        <tr><td class="muted">Model</td><td><input type="text" id="model-name" value="${esc(cfg.model?.model || '')}" placeholder="provider default" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px"></td></tr>
-        ${varRow('API key', keyVarFor(cfg.model?.provider), 'stored in .env, never in committed config')}
-      </table>
-    </div>
-
-    <div class="toolbar">
-      <button class="action primary" id="save-setup">Save</button>
-      <span id="save-msg" class="muted"></span>
-    </div>
-
-    <div class="card" style="margin-top:22px">
-      <strong>Or drive it from your coding agent</strong>
-      <div class="muted" style="font-size:12.5px">Everything here is also typed MCP tools
-        and CLI commands. The server is bound to one project, so an agent cannot act on
-        the wrong repository.</div>
-      <pre>pip install 'testtrout[mcp]'
-trout mcp ${esc(((state.overview || {}).repo || {}).path || '/path/to/project')}</pre>
-      <div class="muted" style="font-size:12.5px">Or from the terminal:
-        <code>trout scan</code>, <code>trout build</code>, <code>trout run</code>.</div>
-    </div>`;
-
-  wireSetup();
-}
-
-/**
- * Read the form back into state before any re-render.
- *
- * Adding a row or switching provider redraws the panel, and without this every
- * unsaved field would be silently discarded — which is exactly the kind of
- * thing that makes a settings page infuriating.
- */
-function harvestSetup() {
-  const cfg = (state.config || {}).config || {};
-
-  cfg.entrypoints = [...document.querySelectorAll('#ep-table tr')].map((row, i) => ({
-    name: row.querySelector('[data-ep="name"]').value.trim() || `env${i}`,
-    url: row.querySelector('[data-ep="url"]').value.trim(),
-    api_url: row.querySelector('[data-ep="api_url"]').value.trim(),
-    disposable: row.querySelector('[data-ep="disposable"]').checked,
-  }));
-  cfg.test_users = [...document.querySelectorAll('#user-table tr')].map((row) => ({
-    role: row.querySelector('[data-user="role"]').value.trim(),
-  }));
-  cfg.supabase = {
-    ...(cfg.supabase || {}),
-    url: $('sb-url').value.trim(),
-    isolation: $('sb-isolation').value,
-  };
-  cfg.login = { ...(cfg.login || {}), path: $('login-path').value.trim() || '/login' };
-  cfg.model = {
-    ...(cfg.model || {}),
-    provider: $('model-provider').value,
-    model: $('model-name').value.trim(),
-  };
-
-  document.querySelectorAll('[data-secret]').forEach((input) => {
-    if (input.value) pendingSecrets[input.dataset.secret] = input.value;
-  });
-  return cfg;
-}
-
-function wireSetup() {
-  const cfg = (state.config || {}).config || {};
-  const redraw = () => renderSetup();
-
-  $('add-ep').onclick = () => {
-    const c = harvestSetup();
-    c.entrypoints = [...(c.entrypoints || []),
-      { name: 'preview', url: '', api_url: '', disposable: false }];
-    redraw();
-  };
-  $('add-user').onclick = () => {
-    const c = harvestSetup();
-    const n = (c.test_users || []).length;
-    c.test_users = [...(c.test_users || []),
-      { role: n === 0 ? 'owner' : n === 1 ? 'member' : `role${n}` }];
-    redraw();
-  };
-  document.querySelectorAll('[data-remove-ep]').forEach((b) => {
-    b.onclick = () => { harvestSetup().entrypoints.splice(Number(b.dataset.removeEp), 1); redraw(); };
-  });
-  document.querySelectorAll('[data-remove-user]').forEach((b) => {
-    b.onclick = () => { harvestSetup().test_users.splice(Number(b.dataset.removeUser), 1); redraw(); };
-  });
-
-  $('model-provider').onchange = () => { harvestSetup(); redraw(); };
-
-  $('save-setup').onclick = async () => {
-    const c = harvestSetup();
-
-    const patch = {
-      // Ticking the box IS the confirmation; the API refuses without it.
-      entrypoints: (c.entrypoints || [])
-        .filter((e) => e.url)
-        .map((e) => ({ ...e, confirm_disposable: e.disposable })),
-      test_users: (c.test_users || []).filter((u) => u.role),
-      login: { path: c.login?.path || '/login' },
-      supabase: {
-        url: c.supabase?.url || '',
-        service_key_var: 'SUPABASE_SERVICE_ROLE_KEY',
-        isolation: c.supabase?.isolation || 'scoped_seed',
-      },
-      model: {
-        provider: c.model?.provider,
-        model: c.model?.model || '',
-        api_key_var: keyVarFor(c.model?.provider),
-      },
-    };
-
-    const secrets = { ...pendingSecrets };
-
-    try {
-      $('save-msg').textContent = 'saving…';
-      await api(`/api/repos/${state.repoId}/config`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (Object.keys(secrets).length) {
-        await api(`/api/repos/${state.repoId}/secrets`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(secrets),
-        });
-      }
-      pendingSecrets = {};
-      await loadRepo();
-      $('save-msg').textContent = 'saved';
-    } catch (e) {
-      $('save-msg').textContent = '';
-      alert(e.message);
-    }
-  };
-}
-
-async function submitAnswer(id, answer, dismiss) {
-  try {
-    await api(`/api/repos/${state.repoId}/questions/${encodeURIComponent(id)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dismiss ? { dismiss: '1' } : { answer }),
-    });
-    await loadRepo();
-  } catch (e) { alert(e.message); }
-}
-
-function toggle(id) {
-  const el = $(id);
-  el.style.display = el.style.display === 'none' ? '' : 'none';
-}
-
-// ----------------------------------------------------------------- load
-
-async function loadRepos() {
-  const d = await api('/api/repos').catch(() => ({ repos: [] }));
-  state.repos = d.repos || [];
-  $('version').textContent = d.version ? `v${d.version}` : '';
-  if (!state.repoId) {
-    const saved = Number(localStorage.getItem('trout.repo'));
-    state.repoId = state.repos.some((r) => r.id === saved) ? saved
-                 : (state.repos[0] ? state.repos[0].id : null);
-  }
-  renderRepoPicker();
-}
-
-async function loadRepo() {
-  if (!state.repoId) { render(activeTab()); return; }
-  const base = `/api/repos/${state.repoId}`;
-  const [overview, tests, jobs, config, questions, project] = await Promise.all([
-    api(`${base}/overview`).catch(() => ({})),
-    api(`${base}/tests`).catch(() => ({})),
-    api(`/api/jobs?repo_id=${state.repoId}`).catch(() => ({})),
-    api(`${base}/config`).catch(() => ({})),
-    api(`${base}/questions`).catch(() => ({})),
-    api(`${base}/project`).catch(() => ({})),
+async function nextStep() {
+  if (!state.id) return;
+  const [project, plan, facts, suite] = await Promise.all([
+    api(`/api/projects/${state.id}`).catch(() => ({})),
+    api(`/api/projects/${state.id}/plan`).catch(() => ({ counts: {} })),
+    api(`/api/projects/${state.id}/facts`).catch(() => ({ outstanding: [] })),
+    api(`/api/projects/${state.id}/suite`).catch(() => ({ counts: {} })),
   ]);
-  Object.assign(state, { overview, tests, jobs, config, questions, project });
-  render(activeTab());
+
+  if (!project.scanned) {
+    say('I have not read this project yet.', {
+      actions: [{ id: 'look', label: 'Read it', primary: true }],
+    });
+    return;
+  }
+
+  const ready = plan.counts?.ready || 0;
+  const waiting = plan.counts?.waiting || 0;
+  const asking = (facts.outstanding || []).length;
+  const proven = suite.counts?.passing || 0;
+
+  if (proven) {
+    say(`Your baseline holds <strong>${proven}</strong> proven test(s).` +
+        (ready ? ` I can add <strong>${ready}</strong> more.` : '') +
+        ' Re-run it any time to see what changed.', {
+      actions: [
+        { id: 'run', label: 'Run the baseline', primary: true },
+        ...(ready ? [{ id: 'build', label: `Add ${ready} more` }] : []),
+        { id: 'suite', label: 'Open the suite' },
+      ],
+    });
+    return;
+  }
+
+  if (ready) {
+    say(`I can test <strong>${ready}</strong> thing(s) right now` +
+        (waiting ? `, and ${waiting} more once I know a bit more` : '') + '.', {
+      actions: [
+        { id: 'build', label: 'Generate the tests', primary: true },
+        { id: 'plan', label: 'See what they are' },
+        ...(asking ? [{ id: 'facts', label: `Fill in ${asking} detail(s)` }] : []),
+      ],
+    });
+    return;
+  }
+
+  say(asking
+    ? `I cannot test anything yet. There are <strong>${asking}</strong> thing(s) only you can tell me — all optional, and each one unlocks work.`
+    : 'I read the project but found nothing I can test against a deployment yet.', {
+    actions: asking
+      ? [{ id: 'facts', label: 'Tell me', primary: true }, { id: 'plan', label: 'See what is blocked' }]
+      : [{ id: 'look', label: 'Look again' }],
+  });
 }
 
-async function loadTests() {
-  if (!state.repoId) return;
-  state.tests = await api(`/api/repos/${state.repoId}/tests`).catch(() => state.tests);
-  renderChrome();
-  if (activeTab() === 'tests') renderTests();
+// ------------------------------------------------------------- artifacts
+
+async function refresh() {
+  if (!state.id) { $('artifacts').innerHTML = ''; return; }
+  const { artifacts } = await api(`/api/projects/${state.id}/artifacts`).catch(() => ({ artifacts: [] }));
+  $('artifacts').innerHTML = artifacts.map((a) => `
+    <button class="art ${state.open === a.kind ? 'on' : ''}" data-art="${a.kind}" ${a.ready ? '' : 'disabled'}>
+      <span class="glyph">${a.icon}</span>
+      <span>
+        <span class="name">${esc(a.label)}</span>
+        <div class="sub">${esc(a.summary)}</div>
+      </span>
+      ${a.attention ? `<span class="count">${a.attention}</span>` : ''}
+    </button>`).join('');
+  document.querySelectorAll('[data-art]').forEach((b) => {
+    b.onclick = () => openArtifact(b.dataset.art);
+  });
+  if (state.open) openArtifact(state.open, true);
 }
 
-const activeTab = () => (document.querySelector('nav button[data-tab].active') || {}).dataset?.tab || 'report';
-
-/** Switch tabs from a link inside a panel. */
-function showTab(name) {
-  const button = document.querySelector(`nav button[data-tab="${name}"]`);
-  if (button) button.click();
+async function openArtifact(kind, keepScroll) {
+  state.open = kind;
+  $('panel').classList.add('open');
+  document.querySelectorAll('[data-art]').forEach((b) =>
+    b.classList.toggle('on', b.dataset.art === kind));
+  const render = { map: renderMap, facts: renderFacts, plan: renderPlan, suite: renderSuite }[kind];
+  if (render) await render();
+  if (!keepScroll) $('panel').scrollTop = 0;
 }
 
-(async () => { await loadRepos(); await loadRepo(); })();
+function panel(title, body) {
+  $('panel-body').innerHTML =
+    `<button class="act close" onclick="closePanel()">Close</button><h2>${esc(title)}</h2>${body}`;
+}
+
+function closePanel() {
+  state.open = null;
+  $('panel').classList.remove('open');
+  document.querySelectorAll('[data-art]').forEach((b) => b.classList.remove('on'));
+}
+
+async function renderMap() {
+  const m = await api(`/api/projects/${state.id}/map`);
+  if (!m.ready) { panel('Project map', '<div class="empty">Not read yet.</div>'); return; }
+  const rows = (items, cell) => items.length
+    ? `<table>${items.map((x) => `<tr>${cell(x)}</tr>`).join('')}</table>`
+    : '<div class="muted">none found</div>';
+
+  panel('Project map', `
+    <p class="muted">${esc(m.summary)}</p>
+    <h3 class="sec">Deployment</h3>
+    <table>
+      <tr><td class="muted" style="width:150px">Stack</td><td>${esc(m.stack)}</td></tr>
+      <tr><td class="muted">App root</td><td class="mono">${esc(m.root)}</td></tr>
+      <tr><td class="muted">Pages served at</td><td class="mono">${esc(m.deployment.url) || '<span class="muted">not set</span>'}</td></tr>
+      <tr><td class="muted">API served at</td><td class="mono">${esc(m.deployment.api_url)
+        || `<span class="muted">same host${m.deployment.api_base_var ? ' — but your code reads ' + esc(m.deployment.api_base_var) : ''}</span>`}</td></tr>
+      <tr><td class="muted">Third parties</td><td>${m.deployment.third_parties.map(esc).join(', ') || '<span class="muted">none</span>'}</td></tr>
+    </table>
+    <h3 class="sec">Storage</h3>
+    <table>
+      <tr><td class="muted" style="width:150px">Backend</td><td>${esc(m.storage.backend)}</td></tr>
+      <tr><td class="muted">Tables</td><td>${m.storage.tables.map(esc).join(', ') || '<span class="muted">none found</span>'}</td></tr>
+      <tr><td class="muted">Access policies</td><td>${m.storage.policies}</td></tr>
+      <tr><td class="muted">Read/write sites</td><td>${m.storage.operations}</td></tr>
+    </table>
+    <h3 class="sec">Pages (${m.pages.length})</h3>
+    ${rows(m.pages, (p) => `<td class="mono" style="width:45%">${esc(p.path)}</td><td class="muted">${esc(p.component)}</td>`)}
+    <h3 class="sec">Endpoints (${m.endpoints.length})</h3>
+    ${rows(m.endpoints, (e) => `<td class="mono" style="width:45%">${esc(e.methods.join('/'))} ${esc(e.path)}</td><td class="muted mono">${esc(e.file)}</td>`)}`);
+}
+
+async function renderFacts() {
+  const f = await api(`/api/projects/${state.id}/facts`);
+  const out = f.outstanding || [];
+  if (!out.length) {
+    panel('What I need from you', `<div class="empty">Nothing outstanding —
+      everything I asked for is filled in.</div>`);
+    return;
+  }
+
+  const field = (fact) => {
+    if (fact.kind === 'command') {
+      return `<div class="field">
+        <label>${esc(fact.label)}</label>
+        <div class="why">${esc(fact.why)}</div>
+        <pre>${esc(fact.placeholder)}</pre>
+        ${fact.evidence ? `<div class="ev">${esc(fact.evidence)}</div>` : ''}
+      </div>`;
+    }
+    const input = fact.kind === 'account'
+      ? `<div class="pair">
+           <input type="text" data-fact="${fact.id}" data-part="email" placeholder="email">
+           <input type="password" data-fact="${fact.id}" data-part="password" placeholder="password">
+         </div>`
+      : `<input type="text" data-fact="${fact.id}" placeholder="${esc(fact.placeholder)}">`;
+    return `<div class="field">
+      <label>${esc(fact.label)}${fact.blocks ? ` <span class="pill wait">unblocks ${fact.blocks}</span>` : ''}</label>
+      <div class="why">${esc(fact.why)}</div>
+      ${input}
+      ${fact.evidence ? `<div class="ev">${esc(fact.evidence)}</div>` : ''}
+    </div>`;
+  };
+
+  panel('What I need from you', `
+    <p class="muted">All optional. Give me what you have — whatever arrives gets used,
+      and I never ask what your product is <em>supposed</em> to do. Passwords go to a
+      gitignored <code>.env</code>, never to committed config.</p>
+    ${out.map(field).join('')}
+    <div class="acts"><button class="act primary" id="save-facts">Save</button>
+      <span id="save-msg" class="muted"></span></div>
+    ${f.answered.length ? `<h3 class="sec">Already on file</h3>
+      <table>${f.answered.map((a) => `<tr><td>${esc(a.label)}</td></tr>`).join('')}</table>` : ''}`);
+
+  $('save-facts').onclick = saveFacts;
+}
+
+async function saveFacts() {
+  const payload = {};
+  document.querySelectorAll('[data-fact]').forEach((input) => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (input.dataset.part) {
+      payload[input.dataset.fact] = payload[input.dataset.fact] || {};
+      payload[input.dataset.fact][input.dataset.part] = value;
+    } else {
+      payload[input.dataset.fact] = value;
+    }
+  });
+  if (!Object.keys(payload).length) { $('save-msg').textContent = 'nothing filled in'; return; }
+
+  $('save-msg').textContent = 'saving…';
+  try {
+    const { applied } = await api(`/api/projects/${state.id}/facts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    closePanel();
+    youSay(`Filled in ${applied.length} detail(s).`);
+    await refresh();
+    say('Thanks — let me look again with that.', {
+      actions: [{ id: 'look', label: 'Look again', primary: true }],
+    });
+  } catch (e) {
+    $('save-msg').textContent = e.message;
+  }
+}
+
+async function renderPlan() {
+  const p = await api(`/api/projects/${state.id}/plan`);
+  const row = (c, extra) => `<tr>
+    <td style="width:70px"><span class="pill dim">${esc(c.kind === 'page' ? 'browser' : 'API')}</span></td>
+    <td>${esc(c.title)}<div class="muted" style="font-size:12px">${esc(c.detail)}</div></td>
+    <td class="muted" style="width:34%">${extra(c)}</td></tr>`;
+
+  panel('Test plan', `
+    <p class="muted">Ready means the deployment has already answered, so I can record
+      what it did and assert it keeps doing it. Nothing here is ranked by importance —
+      that is your knowledge, not mine.</p>
+    <h3 class="sec">Ready now (${p.ready.length})</h3>
+    ${p.ready.length ? `<table>${p.ready.map((c) => row(c, () => '')).join('')}</table>`
+      : '<div class="muted">nothing yet</div>'}
+    <h3 class="sec">Waiting on you (${p.waiting.length})</h3>
+    ${p.waiting.length ? `<table>${p.waiting.map((c) =>
+      row(c, (x) => (x.needs_labels || []).map(esc).join(', '))).join('')}</table>`
+      : '<div class="muted">nothing waiting</div>'}`);
+}
+
+async function renderSuite() {
+  const s = await api(`/api/projects/${state.id}/suite`);
+  if (!s.tests.length) {
+    panel('Baseline suite', '<div class="empty">No tests yet.</div>');
+    return;
+  }
+  const cls = { passing: 'ok', failing: 'bad', needs_info: 'wait', blocked: 'wait', untried: 'dim' };
+  panel('Baseline suite', `
+    <p class="muted">Every assertion here came from watching your deployment once.
+      A failure means it stopped doing something it used to do.</p>
+    <table>${s.tests.map((t) => `<tr>
+      <td style="width:110px"><span class="pill ${cls[t.state] || 'dim'}">${esc(t.label)}</span></td>
+      <td>${esc(t.title)}${t.detail ? `<div class="muted" style="font-size:12px">${esc(t.detail)}</div>` : ''}</td>
+      <td class="muted mono" style="width:30%;font-size:11.5px">${esc(t.emitted_to || '')}</td>
+    </tr>`).join('')}</table>`);
+}
+
+// ---------------------------------------------------------------- boot
+
+$('add-btn').onclick = () => $('add-dialog').showModal();
+$('add-cancel').onclick = () => $('add-dialog').close();
+$('add-confirm').onclick = async () => {
+  const path = $('add-path').value.trim();
+  if (!path) return;
+  try {
+    const repo = await api('/api/repos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'local', path, deployment_url: $('add-url').value.trim() }),
+    });
+    $('add-dialog').close();
+    localStorage.setItem('trout.project', repo.id);
+    location.reload();
+  } catch (e) { alert(e.message); }
+};
+
+$('project-select').onchange = (e) => {
+  localStorage.setItem('trout.project', e.target.value);
+  location.reload();
+};
+
+(async () => {
+  const { repos } = await api('/api/repos').catch(() => ({ repos: [] }));
+  state.projects = repos;
+  const saved = Number(localStorage.getItem('trout.project'));
+  state.id = repos.some((r) => r.id === saved) ? saved : (repos[0]?.id ?? null);
+
+  $('project-select').innerHTML = repos.length
+    ? repos.map((r) => `<option value="${r.id}" ${r.id === state.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')
+    : '<option>no projects</option>';
+
+  if (!state.id) {
+    say('Add a project to start — a folder on this machine, and the URL it is deployed at if you have one.');
+    return;
+  }
+
+  const project = await api(`/api/projects/${state.id}`).catch(() => ({}));
+  $('project-name').textContent = project.path || '';
+  say(`<strong>${esc(project.name || '')}</strong>` +
+      (project.stack ? ` — ${esc(project.stack)}` : '') +
+      (project.deployment ? `, deployed at ${esc(project.deployment)}` : ', no deployment yet') + '.');
+  await refresh();
+  await nextStep();
+})();
 </script>
 </body>
 </html>

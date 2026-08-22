@@ -25,10 +25,30 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from testtrout.domain.gap import TestKind
-from testtrout.domain.intent import Provenance
 from testtrout.domain.observation import SelectorCandidate
+from testtrout.domain.provenance import Provenance
 from testtrout.domain.surface import Criticality
+
+
+class TestKind(StrEnum):
+    """What kind of test this is.
+
+    Two of these are what the tool builds a baseline from — a browser journey
+    and an endpoint check. The other two remain because the emitters for them
+    exist and are useful once a person supplies database access, which most
+    will not.
+    """
+
+    AUTHORIZATION = "authorization"
+    """One user must not reach another's data. Generated from an RLS policy,
+    which states the expectation directly — cheap to write and high value."""
+    BROWSER_JOURNEY = "browser_journey"
+    """A user-visible flow driven through the interface. The most faithful and
+    the most expensive."""
+    DATA_OPERATION = "data_operation"
+    """A specific read or write asserted at the data layer."""
+    ENDPOINT = "endpoint"
+    """A first-party HTTP endpoint, Route Handler, or Server Action."""
 
 
 class ScenarioStatus(StrEnum):

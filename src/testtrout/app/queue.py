@@ -20,9 +20,7 @@ from testtrout.app.models import JobRecord, JobState, now
 
 # Kinds the worker knows how to execute. Anything else is rejected at enqueue
 # rather than failing later on a worker thread with no useful context.
-KINDS: frozenset[str] = frozenset(
-    {"scan", "build", "probe", "intent", "propose", "generate", "run", "certify"}
-)
+KINDS: frozenset[str] = frozenset({"understand", "build", "run"})
 
 # Jobs that survived a crash. On startup they are failed rather than retried:
 # a half-finished run may have left state behind, and silently repeating it is

@@ -1,9 +1,11 @@
-"""Turning analysis into a plan.
+"""Working out what to do, from what was read and what was seen.
 
-Deliberately split by determinism. :mod:`testtrout.planning.gaps` is pure
-computation over the scan, the probe, and stated intent — it never calls a
-model, so a ranked plan is reproducible and every rank can be interrogated.
-:mod:`testtrout.planning.intent` is the one part that does use a model, and it
-uses it for the only thing a model is genuinely better at here: turning a
-developer's prose into structure, and asking a good follow-up question.
+Everything in this package is deterministic. No module here calls a model, and
+none of them ask a person what the product is supposed to do — the two rules
+that keep the answer reproducible and the queue of questions short.
+
+:mod:`~testtrout.planning.candidates` decides what can be tested.
+:mod:`~testtrout.planning.facts` decides what is still missing.
+:mod:`~testtrout.planning.overview` describes the project in product language.
+:mod:`~testtrout.planning.tests_view` says what each existing test is doing.
 """

@@ -114,7 +114,7 @@ def test_no_user_facing_string_names_a_command_that_does_not_exist():
     from testtrout.cli.main import app as cli
 
     known = {command.name or command.callback.__name__ for command in cli.registered_commands}
-    assert "scan" in known, "command table looks wrong; the guard would pass vacuously"
+    assert "look" in known, "command table looks wrong; the guard would pass vacuously"
 
     source = Path(__file__).resolve().parents[2] / "src" / "testtrout"
     # Only inside backticks. That is how every instruction in this codebase is

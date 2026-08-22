@@ -55,7 +55,7 @@ class SupabaseAuthAdapter:
                 False,
                 self.id,
                 "supabase.url and supabase.anon_key must be set in .trout/config.yaml "
-                "(use env: references). Run `trout init` to configure them.",
+                "(use env: references). Run `trout facts` to configure them.",
             )
 
         ref = project_ref(url)

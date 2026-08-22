@@ -37,7 +37,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: ['browser/**/*.spec.ts', 'authz/**/*.spec.ts'],
   // Deliberate: retrying hides the flakiness it should surface. Repeats happen
-  // during `trout certify`, where inconsistency is the signal being measured.
+  // during `trout run`, where inconsistency is the signal being measured.
   retries: 0,
   fullyParallel: false,
   workers: 1,

@@ -9,79 +9,67 @@ what is missing — call it whenever a step fails, before trying anything else.
 
 ---
 
-## Everything is configurable from the interface
+## The whole flow
 
 ```bash
 pip install testtrout
 trout up
 ```
 
-Three tabs, and progress streams into a drawer on the right while a job runs.
+Storage, worker, and interface, all local. **No API key of any kind** — nothing
+here calls a model.
 
-| Tab | What it answers |
+The interface is a conversation with a sidebar. The conversation says what just
+happened and what to do next; the sidebar holds what is true now:
+
+| Artifact | What it holds |
 |---|---|
-| **Report** | What this project is, what needs testing, and what moved since the last scan |
-| **Tests** | Every test and its state — passing, failing, needs you, could not run — with whatever is flagged against it |
-| **Setup** | Every setting |
+| **Project map** | Pages, endpoints, storage, deployment, third parties |
+| **What I need from you** | An optional form of concrete values |
+| **Test plan** | What can be tested now, and what each blocked item needs |
+| **Baseline suite** | Every test, and what it is currently doing |
 
-Add a project, then open **Setup**. Every setting lives there:
-
-| Section | What it does |
-|---|---|
-| **What you can test right now** | Each capability, ready or blocked, with the one thing it needs |
-| **Credentials this app needs** | Discovered by reading your source — the variables your app actually uses, and where |
-| **Deployments** | URLs, and the disposable tick that decides whether writes are allowed |
-| **Supabase** | Project URL, keys, database isolation |
-| **Test accounts** | Roles, emails, passwords |
-| **Model provider** | Anthropic, OpenAI, or Kimi, and its key |
-
-**Secret values never reach `.trout/config.yaml`.** The interface writes them to
-a gitignored `.env` and stores only `env:NAME` references in the committed file.
-Typing a literal secret into a configuration field is rejected, not saved.
-
-**A partial set of credentials gives a partial suite, not an error.** With only
-a URL you can already probe and run API tests; adding an anon key and a second
-account unlocks authorization tests. Setup always names the single next thing.
-
-### Or from the terminal
-
-The CLI does everything the interface does:
+The same thing from the terminal:
 
 ```bash
-trout plan                                   # what is possible, what is missing
-trout config                                 # show current settings
-trout config --provider kimi --isolation local_reset
-trout config --set-secret SUPABASE_ANON_KEY=... --set-secret TROUT_OWNER_PASSWORD=...
+trout add ~/code/my-app --url https://my-app.vercel.app
+trout look          # read the code, ask the deployment, work it out
+trout facts         # what I still need — all optional
+trout build         # write the baseline and prove it
+trout run           # re-run it; a failure means behaviour changed
 ```
 
----
+### What it asks for
 
-## The short way
+Only values a person holds and the tool cannot discover. Never a question about
+what your product is supposed to do — that is read from your code and observed
+from your deployment.
 
 ```bash
-pip install testtrout
-trout up
+trout facts --set deployment_url=https://my-app.vercel.app
+trout facts --set api_url=https://api.my-app.com
+trout facts --set account_primary=test@example.com:hunter2
+trout facts --set sample_id=7f3ab210
 ```
 
-Storage, worker, and interface, all local. Add a project from the page, or:
+Partial answers are the normal case. Give it a URL and nothing else and you get
+every page that loads signed out. Add an account and everything behind the
+sign-in follows.
+
+**Passwords never reach committed files.** They go to a gitignored `.env`; the
+committed `config.yaml` holds only `env:NAME` references.
+
+### The one thing that is a command, not a value
+
+Tests can be written without a runner, but not proven — so the suite would be
+empty. Install them in your app:
 
 ```bash
-trout link ~/code/my-app --url https://my-app.vercel.app     # never modified
-trout link --github owner/name --url https://my-app.vercel.app
+npm install -D vitest @playwright/test && npx playwright install chromium
 ```
 
-Pass `--url` now if you can. A scan runs automatically, and without a deployment it can
-only read code; with one it can also check what the running system actually does. You
-can add it later with `trout init --url <url>`, but the first scan will have been the
-poorer for it. The deployment is read-only until you mark it disposable.
-
-The rest of this document is the same workflow from the terminal, plus what to do when
-a step fails.
-
-**Storage lives in two places, on purpose.** Your scenario specs and generated tests
-stay in the repository — committed, reviewable in a pull request, moving with a branch.
-Run history, coverage over time, and the job queue go in SQLite under `~/.testtrout`,
-because no arrangement of files in one repo can answer "is this test getting flakier".
+In a monorepo that is the directory holding your `package.json`, which TestTrout
+reports as the app root in the project map.
 
 ### GitHub access
 
@@ -99,107 +87,66 @@ people do not think about.
 
 ---
 
-## Step 1 — Install
+## Install
 
 ```bash
-uv tool install testtrout          # or: pipx install testtrout
+pip install testtrout            # scan, plan, build, run
+pip install 'testtrout[probe]'   # plus a real browser
+pip install 'testtrout[mcp]'     # plus the MCP server
 ```
 
-**Verify:**
+Python 3.11+. Node is needed only in the project under test, to run the
+generated Playwright and Vitest files.
+
+## What a look actually does
 
 ```bash
-trout version        # prints a version string
+trout look --json | jq '.counts'
 ```
 
-**If `trout` is not found:** the install location is not on `PATH`. Run
-`uv tool update-shell` (or `pipx ensurepath`) and open a new shell.
+Three things, in order, and always together — a scan whose consequences are not
+worked out is a file on disk nobody asked for.
 
----
+**1. It reads the code.** No network access at all. Finds routes and the
+components behind them, HTTP endpoints (including calls made through a client
+wrapper), Supabase reads and writes with their tables, row-level security
+policies, third-party vendors, and the environment variables the app reads.
 
-## Step 2 — Scan the repository
+**2. It asks the deployment.** Loads every known route in a real browser and
+records what happened: status, title, and the most durable selectors on the
+page. Then asks each endpoint what it does with no credentials — with a GET,
+whatever methods it declares, because a GET cannot change anything.
 
-Needs no API key, no network, and no running application. Safe on a repository
-you have just cloned and do not trust.
+A `401` or `403` means the auth layer answered first, so an account is needed. A
+`405 Method Not Allowed` means the router answered, so the request got past
+auth. A `404` usually means the API is served somewhere else entirely, which is
+why it asks for an API URL rather than reporting the endpoint as public.
 
-```bash
-cd /path/to/your/project
-trout scan
+**3. It works out what can be tested.** Anything the deployment answered for is
+ready, because the baseline *is* what it answered. Anything else names the one
+concrete value that would change that.
+
+## What a build writes
+
+For each ready candidate, one file, then it runs it, then it keeps it only if it
+passes:
+
+```typescript
+test('/orders still loads', async ({ page }) => {
+    await page.goto('/orders');
+    // observed: the page title when /orders was loaded
+    await expect(page).toHaveTitle('Orders');
+    // observed: seen on /orders at baseline
+    await expect(page.getByTestId('orders-table')).toBeVisible();
+});
 ```
 
-**Verify:**
+Every assertion names what was seen. Nothing asserts what the page *should* say,
+because nobody told it.
 
-```bash
-trout scan --json | jq '.project.framework, (.data_operations | length)'
-```
-
-A framework of `"unknown"` or zero data operations means the scan found
-nothing. Check `.project.detected_from` in the JSON — it lists the evidence the
-detection used, which is usually enough to see what went wrong.
-
-**Supported:** React + Vite (Lovable, v0, Bolt output) and Next.js App Router,
-in TypeScript, with Supabase. Anything else needs an adapter — see
-[adapters.md](adapters.md).
-
-**Read the warnings before continuing:**
-
-```bash
-trout scan --json | jq '.warnings'
-```
-
-| Code | Meaning | What to do |
-|---|---|---|
-| `table_without_rls` | A table is written to from client code with no row-level security. The anon key is in the browser, so this data is world-writable. | Tell the user. This is usually news, and usually urgent. |
-| `unresolved_table` | A Supabase call whose table name is computed. | A blind spot — nothing will generate a test for it. Ask which table it hits. |
-| `no_routes_found` | No React Router routes were found. | The app may route another way. `trout probe` can still discover screens. |
-
----
-
-## Step 3 — Credentials
-
-Create a **gitignored** `.env` beside your project. `trout` loads it
-automatically and never overrides a variable you have already exported.
-
-```bash
-cat > .env <<'ENV'
-SUPABASE_ANON_KEY=...
-QA_OWNER_EMAIL=owner@example.test
-QA_OWNER_PASSWORD=...
-QA_MEMBER_EMAIL=member@example.test
-QA_MEMBER_PASSWORD=...
-MOONSHOT_API_KEY=...
-ENV
-echo ".env" >> .gitignore
-```
-
-**Two test users, not one.** Proving that user A cannot see user B's data
-requires a B. Authorization tests are the highest-value tests this tool
-generates and they are impossible with a single account.
-
-**Never put a secret in `.trout/config.yaml`.** That file is committed. It holds
-`env:NAME` references only, and `trout init` will only ever ask you for names.
-
----
-
-## Step 4 — Configure
-
-Interactive:
-
-```bash
-trout init
-```
-
-Non-interactive — **use this form in scripts and agents**, it prompts for
-nothing:
-
-```bash
-trout init --yes \
-  --url https://your-app.vercel.app \
-  --name preview \
-  --no-disposable \
-  --supabase-url https://YOUR-REF.supabase.co \
-  --provider kimi \
-  --role owner --role member
-```
+Selectors are chosen by durability: a `data-testid` beats a role, which beats
+visible text. A test pinned to copy breaks on a wording change and teaches
+people to ignore failures.
 
 ### `--disposable` is the important flag
 
@@ -222,188 +169,6 @@ trout doctor --json | jq '.checks'
 
 ---
 
-## Step 5 — Browser probing
-
-```bash
-pip install 'testtrout[probe]'
-playwright install chromium
-```
-
-Then:
-
-```bash
-trout probe --role owner
-```
-
-This signs in, loads every known route, and records what actually happens:
-which queries fire, what the backend returns, what stable selectors exist, and
-what the console logged. It **navigates only** — it never clicks buttons or
-submits forms.
-
-**Verify:**
-
-```bash
-trout probe --json | jq '[.screens[] | select(.reachable)] | length'
-```
-
-**Common results and what they mean:**
-
-| Finding | Meaning |
-|---|---|
-| `auth_failed` | Sign-in did not work. Read the `detail` — it names the specific cause. |
-| `auth_wall_while_signed_in` | The session was not accepted, or the role genuinely lacks access. |
-| `policy_denial` | RLS refused a request the screen expects to succeed. A real bug, usually. |
-| `write_blocked` | The guard stopped a write. Expected on `--no-disposable`. |
-| `weak_selectors` | Nothing more stable than visible text to target. Add `data-testid` attributes. |
-| `undeclared_table` / `undeclared_external` | Runtime traffic the static scan cannot account for. |
-
-**If Supabase sign-in fails**, check in this order:
-
-1. The user exists **and is confirmed** in Supabase Auth.
-2. The password grant is enabled for the project.
-3. `supabase.url` and `supabase.anon_key` are correct.
-4. You are using the right endpoint — `api.moonshot.ai` vs `.cn` style
-   mismatches exist for Supabase regions too, and a key from one project is
-   rejected by another.
-
----
-
-## Step 6 — Model provider
-
-Only scenario proposal, intent capture, and failure explanation use a model.
-`trout scan` and `trout probe` never do.
-
-```bash
-trout providers --check      # makes one small live call
-```
-
-Supported: `anthropic`, `openai`, `kimi` (Moonshot, or any OpenAI-compatible
-endpoint via `base_url`).
-
-**Do not set `temperature`.** Reasoning models restrict it — Claude rejects the
-parameter outright, and `kimi-k3` accepts only `1`. The default leaves it unset,
-which is correct for every provider.
-
----
-
----
-
-## Step 7 — Capture intent and see the gaps
-
-```bash
-trout intent          # conversational; starts from a draft of your codebase
-trout gaps            # ranked list of the tests you are missing, and why
-```
-
-`trout intent` does not start from a blank page. It reads your surface map, drafts
-what it thinks the product does, and asks you to correct it — a much easier
-question to answer. Everything drafted is marked `inferred` until you confirm
-it, and inferred intent never justifies blocking anything.
-
-Scriptable:
-
-```bash
-trout intent --describe "A shop where customers place and pay for orders." --json
-trout intent --from PRODUCT.md --json
-trout intent --draft --json      # draft only, ask nothing
-```
-
-`.trout/intent.yaml` is committed and hand-editable. Correcting that file directly
-is often faster than another round of conversation, and the tool reads it back.
-
-`trout gaps` is **deterministic — no model is used.** Every rank is the sum of
-named contributions, so a ranking you disagree with can be argued with:
-
-```bash
-trout gaps --json | jq '.gaps[0] | {title, score, reasons}'
-trout gaps --kind authorization      # the cheapest high-value tests
-trout gaps --ready                   # only what can be written right now
-trout gaps --budget 300              # the best suite that runs in 5 minutes
-```
-
-It works from the scan alone, and gets substantially better with `trout intent`
-and `trout probe`. Read `.notes[]` — it says what evidence is missing.
-
-**Blocked gaps** are real work that cannot be done yet. `needs_two_roles` means
-add a second test user; `unreachable` means fix the route before testing it;
-`unresolved_table` means tell the tool which table a computed name refers to.
-
----
-
-## Step 8 — Draft, approve, generate
-
-```bash
-trout propose -n 5            # draft the top-ranked gaps
-trout scenarios               # review them
-trout approve <id> [<id>...]  # or --all for every draft with no open questions
-trout generate                # compile to runnable test files
-```
-
-`trout propose` builds scenarios **deterministically** from your schema, policies,
-and probe data. A model only refines the wording, picks which observed elements
-to assert on, and says what it could not determine. `--no-model` works with no
-API key and still produces usable scenarios.
-
-Scenarios live in `.trout/scenarios/*.yaml` — committed, hand-editable, and the
-thing you review. Editing a `.yaml` and regenerating is the supported way to
-change a test.
-
-**Generated code is a build artifact.** It carries a do-not-edit header and is
-overwritten on every `trout generate`. Never edit it.
-
-A scenario with **open questions cannot be approved.** That is deliberate:
-approving it produces a test that passes vacuously, which is worse than having
-no test. Answer the question in the `.yaml`, then approve.
-
-What gets generated:
-
-| Kind | Output | Runner |
-|---|---|---|
-| `authorization` | Leak test: no row you can read belongs to another user | Vitest + supabase-js |
-| `browser_journey` | Navigate and assert on observed elements | Playwright |
-| `endpoint` | HTTP call and status assertion | Vitest |
-
-Authorization tests are read-only, so they are safe against a shared
-deployment, and they are the highest value per second of runtime — the policy
-already states the expectation, so nothing is inferred.
-
----
-
-## Step 9 — Run the suite
-
-Generated tests run through **your** toolchain, so they work without this tool
-installed:
-
-```bash
-npm install -D vitest @playwright/test
-npx playwright install chromium
-trout run
-```
-
-```bash
-trout run --scenario <id>     # one scenario
-trout run --no-reset          # skip database isolation
-trout certify                 # prove scenarios are deterministic
-trout report                  # results and evidence from the last run
-```
-
-### Read `status` before `results`
-
-| Status | Meaning |
-|---|---|
-| `pass` | Everything asserted held. |
-| `fail` | A real assertion failed. This is a product signal. |
-| `warning` | A flake, a blocked third-party call, or a timeout. |
-| `inconclusive` | **Says nothing about the product.** Something prevented a reliable decision. |
-
-An inconclusive run is never reported as a pass. If credentials are missing or
-the toolchain is not installed, nothing executes and the run says so — a suite
-that fails for those reasons has told you nothing about your application.
-
-Only `assertion_failure` is a product signal. `auth_failure`,
-`environment_failure`, `dependency_failure`, and `contract_mismatch` are about
-the harness, and reporting them as regressions is how a suite loses credibility.
-
 ### Database isolation
 
 ```yaml
@@ -420,29 +185,17 @@ supabase:
 
 ### Third-party calls are blocked
 
-Hosts in `substitution.external` — populated by `trout scan` from the SDKs it finds
+Hosts in `substitution.external` — populated by `trout look` from the SDKs it finds
 — are intercepted during browser tests. A test run cannot charge a card or email
 a customer. An unmatched request fails loudly rather than passing through,
 because a mock that silently matches nothing is how a suite starts reporting
 green while testing nothing.
 
-### Certification
+### Retries are off, deliberately
 
-```bash
-trout certify --runs 3
-```
-
-Runs the suite repeatedly. Consistent passes → `certified`. Inconsistent →
-`quarantined`, excluded from blocking. A consistent *failure* is neither: that
-is a result about your product, not about the test.
-
-Blocking eligibility requires certification **and** at least one assertion
-backed by real evidence — a certified test built only on inference proves
-nothing worth blocking on.
-
-Note that `retries: 0` is set deliberately in the generated runner configs.
-Retrying hides the flakiness it should surface; repeats belong in `trout certify`,
-where inconsistency is the signal being measured.
+`retries: 0` is set in the generated runner configs. Retrying hides the
+flakiness it should surface, and a baseline test that only passes sometimes is
+telling you something real about the page.
 
 ---
 
@@ -452,10 +205,10 @@ where inconsistency is the signal being measured.
 trout web            # http://127.0.0.1:7411
 ```
 
-Same state as the CLI, different view. Useful for the parts that are better
-with a screen: working through the ranked gap list, reading a scenario's
-assertions and provenance before approving it, and watching a run produce
-results.
+Same state as the CLI, different shape: a conversation in the middle, and every
+artifact it produces listed beside it. The conversation says what just happened
+and what is worth doing next; the sidebar holds what is currently true, so
+nothing important scrolls away.
 
 It binds to **loopback only**. It reads your credentials and can trigger runs
 against your deployment, so it is not something to expose on a network.
@@ -481,62 +234,14 @@ pip install 'testtrout[mcp]'
 trout mcp /path/to/your/project
 ```
 
-It exposes thirteen tools (`scan`, `surfaces`, `gaps`, `intent`, `probe`, `propose`,
-`scenarios`, `approve`, `generate`, `run`, `certify`, `report`, `doctor`) and four resources
-(`trout://surfaces`, `trout://gaps` via the tool, `trout://intent`, `trout://config`,
-`trout://scenarios`).
+It exposes seven tools (`look`, `facts`, `set_facts`, `plan`, `build`, `run`,
+`suite`) and five resources (`trout://map`, `trout://facts`, `trout://plan`,
+`trout://config`, `trout://scenarios`).
 
 The server is bound to **one project** at startup, so an agent cannot operate
 on the wrong repository by passing a stray path. Tools return summaries;
 resources carry the bulk, so a tool result does not crowd out an agent's
 context.
-
----
-
-## Performance
-
-`trout intent` calls a reasoning model. Some default to their slowest setting —
-`kimi-k3` defaults to `max`, which took over 150 seconds on a small app versus
-38 at `low`. Intent capture asks for `low` automatically. To change it
-globally:
-
-```yaml
-model:
-  effort: low     # low | high | max — providers that don't know it ignore it
-```
-
----
-
-## Command reference
-
-| Command | Needs | Purpose |
-|---|---|---|
-| `trout scan` | nothing | Analyse the repository |
-| `trout surfaces` | a scan | List what was found, filterable |
-| `trout doctor` | nothing | Diagnose what is missing |
-| `trout init` | a scan | Configure deployments, auth, users |
-| `trout providers --check` | config | Verify the model provider |
-| `trout probe` | config + chromium | Observe the running deployment |
-| `trout intent` | a scan + a model | Capture what matters |
-| `trout gaps` | a scan | Rank the missing tests. No model. |
-| `trout propose` | a scan | Draft scenario specifications |
-| `trout scenarios` | — | List scenarios and their status |
-| `trout approve` | drafts | Accept scenarios into the suite |
-| `trout generate` | approved scenarios | Compile to test files |
-| `trout run` | generated tests + toolchain | Execute the suite |
-| `trout certify` | generated tests | Prove scenarios are deterministic |
-| `trout report` | a run | Results and evidence |
-| `trout up` | — | Start storage, worker, and interface |
-| `trout link` | `--url`, `--github`, `--name` | Add a project: a local folder or a GitHub clone, plus where it is deployed |
-| `trout repos` | — | List linked repositories |
-| `trout worker` | — | Standalone worker |
-| `trout plan` | — | What is possible, and what is missing |
-| `trout config` | — | Show or change settings; write secrets to .env |
-| `trout web` | — | `trout up` scoped to one repository |
-| `trout mcp` | — | MCP server for coding agents |
-
-Every command in the MVP is implemented. GitHub pull-request integration is the
-next milestone.
 
 ---
 
@@ -546,7 +251,9 @@ next milestone.
 |---|---|---|
 | `.trout/config.yaml` | yes | Configuration. Holds `env:` references, never secrets. |
 | `.trout/surfaces.yaml` | yes | The surface map. Deterministic, so it diffs cleanly. |
-| `.trout/intent.yaml` | yes | What matters, in your words. Edit it directly. |
+| `.trout/facts.yaml` | yes | What was asked for. Never a secret value. |
+| `.trout/plan.yaml` | yes | What can be tested, and what is waiting. |
+| `.trout/overview.yaml` | yes | The project map, in product language. |
 | `.trout/scenarios/` | yes | Your test suite. Reviewing changes to it is the point. |
 | `.trout/observed/` | no | A snapshot of a running system at one moment. |
 | `.trout/runs/`, `.trout/evidence/` | no | Outputs. Large. |

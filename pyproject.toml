@@ -116,4 +116,5 @@ python_classes = []
 asyncio_mode = "auto"
 markers = [
   "live: requires a real model provider or deployment (skipped by default)",
+  "slow: drives a real browser; run with `pytest -m slow` or in CI",
 ]

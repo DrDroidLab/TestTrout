@@ -35,3 +35,8 @@ examples/*/.trout/
 testtrout.db
 testtrout.db-*
 .testtrout/
+
+# Shared browser/node runners for the slow suite. Installed on demand with
+# `npm install --prefix tests/.toolchain`; never part of a fixture.
+node_modules/
+tests/.toolchain/package-lock.json

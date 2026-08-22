@@ -14,7 +14,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from testtrout.domain.question import Question
 from testtrout.domain.run import Classification, RunRecord, ScenarioResult
 from testtrout.domain.scenario import Scenario, ScenarioIndex, ScenarioStatus
 from testtrout.domain.surface import Criticality
@@ -98,19 +97,14 @@ def latest_results(runs: list[RunRecord]) -> dict[str, ScenarioResult]:
 def build(
     index: ScenarioIndex,
     results: dict[str, ScenarioResult],
-    questions: list[Question],
+    questions: list[object] | None = None,
 ) -> list[TestView]:
     """Join scenarios with their last result and their open questions.
 
     Ordered so that whatever needs a person comes first: a list sorted by id is
     tidy and useless, and the reason to open this tab is to find what to do.
     """
-    by_subject: dict[str, list[Question]] = {}
-    for question in questions:
-        if question.subject:
-            by_subject.setdefault(question.subject, []).append(question)
-
-    views = [_view(scenario, results.get(scenario.id), by_subject) for scenario in index.scenarios]
+    views = [_view(scenario, results.get(scenario.id)) for scenario in index.scenarios]
     order = {
         TestState.FAILING: 0,
         TestState.NEEDS_INFO: 1,
@@ -121,20 +115,9 @@ def build(
     return sorted(views, key=lambda v: (order[v.state], v.criticality.rank, v.title))
 
 
-def _view(
-    scenario: Scenario,
-    result: ScenarioResult | None,
-    by_subject: dict[str, list[Question]],
-) -> TestView:
+def _view(scenario: Scenario, result: ScenarioResult | None) -> TestView:
     """Decide what one test is doing, and say why in one line."""
-    open_questions = [
-        question.text for question in by_subject.get(scenario.id, []) if question.open
-    ]
-    # The scenario's own open_questions are the authoritative copy: the log
-    # dedupes across rescans and may not carry one raised moments ago.
-    for text in scenario.open_questions:
-        if text not in open_questions:
-            open_questions.append(text)
+    open_questions = list(scenario.open_questions)
 
     state, detail = _classify(scenario, result, open_questions)
     return TestView(

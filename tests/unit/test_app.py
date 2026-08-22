@@ -133,9 +133,9 @@ def test_jobs_are_serialised_per_repository(
     one = registry.link_local(_repo_dir(tmp_path, "one"))
     two = registry.link_local(_repo_dir(tmp_path, "two"))
 
-    queue.enqueue(one.id, "scan")
+    queue.enqueue(one.id, "understand")
     queue.enqueue(one.id, "run")
-    queue.enqueue(two.id, "scan")
+    queue.enqueue(two.id, "understand")
 
     first = queue.claim()
     assert first.repo_id == one.id
@@ -152,7 +152,7 @@ def test_finishing_a_job_frees_its_repository(
     tmp_path: Path, registry: RepoRegistry, queue: JobQueue
 ):
     record = registry.link_local(_repo_dir(tmp_path))
-    queue.enqueue(record.id, "scan")
+    queue.enqueue(record.id, "understand")
     queue.enqueue(record.id, "run")
 
     first = queue.claim()
@@ -177,7 +177,7 @@ def test_a_queued_job_can_be_cancelled_but_a_running_one_cannot(
 ):
     """A running job is driving a subprocess against a real deployment."""
     record = registry.link_local(_repo_dir(tmp_path))
-    queued = queue.enqueue(record.id, "scan")
+    queued = queue.enqueue(record.id, "understand")
     assert queue.cancel(queued.id) is True
     assert queue.get(queued.id).state is JobState.CANCELLED
 
@@ -200,7 +200,7 @@ def test_stale_jobs_are_failed_not_retried(tmp_path: Path, registry: RepoRegistr
 
 def test_logs_accumulate_on_a_job(tmp_path: Path, registry: RepoRegistry, queue: JobQueue):
     record = registry.link_local(_repo_dir(tmp_path))
-    job = queue.enqueue(record.id, "scan")
+    job = queue.enqueue(record.id, "understand")
     queue.log(job.id, "first")
     queue.log(job.id, "second")
     assert queue.get(job.id).log == ["first", "second"]
@@ -218,18 +218,18 @@ def test_a_failing_handler_fails_its_job_not_the_worker(
 
     record = registry.link_local(_repo_dir(tmp_path))
     instance = Worker(database)
-    job = instance.queue.enqueue(record.id, "scan")
+    job = instance.queue.enqueue(record.id, "understand")
     instance.queue.claim()
 
     def explode(context):
         raise RuntimeError("boom")
 
-    original = worker_module.HANDLERS["scan"]
-    worker_module.HANDLERS["scan"] = explode
+    original = worker_module.HANDLERS["understand"]
+    worker_module.HANDLERS["understand"] = explode
     try:
         instance.execute(instance.queue.get(job.id))
     finally:
-        worker_module.HANDLERS["scan"] = original
+        worker_module.HANDLERS["understand"] = original
 
     finished = instance.queue.get(job.id)
     assert finished.state is JobState.FAILED
@@ -249,10 +249,11 @@ def test_the_worker_runs_a_real_scan(tmp_path: Path, registry: RepoRegistry, dat
 
     record = registry.link_local(root)
     instance = Worker(database)
-    job = instance.queue.enqueue(record.id, "scan")
+    job = instance.queue.enqueue(record.id, "understand")
     instance.execute(instance.queue.claim())
 
     finished = instance.queue.get(job.id)
     assert finished.state is JobState.DONE
-    assert finished.result["counts"]["policies"] == 4
+    # The understand job reports what it worked out, not raw surface counts.
+    assert finished.result["pages"] > 0
     assert registry.get(record.id).framework == "vite-react"

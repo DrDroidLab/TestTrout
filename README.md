@@ -41,58 +41,50 @@ pip install testtrout
 trout up
 ```
 
-That starts everything: storage, a background worker, and the interface at
-`localhost:7411`. No Docker, no daemon, no database to install — storage is SQLite
-under `~/.testtrout` and the worker runs in-process.
+Storage, a worker, and the interface at `localhost:7411`. No Docker, no daemon,
+no database to install — SQLite under `~/.testtrout`, worker in-process. **No API
+key of any kind.** Nothing here calls a model.
 
-Then add a project — a repository, and the URL it is deployed at:
+## How it works
+
+Add a project — a folder on this machine, and the URL it is deployed at.
 
 ```bash
-trout link ~/code/my-app --url https://my-app.vercel.app
-trout link --github owner/name --url https://my-app.vercel.app
+trout add ~/code/my-app --url https://my-app.vercel.app
 ```
 
-Both halves matter. The repository says what your product is supposed to do; the
-deployment says what it actually does, and a test is only worth keeping once it has
-been run against the second. Your folder is never modified, and the deployment is
-read-only until you mark it disposable.
+Then four steps, which are also four commands:
 
-A scan starts automatically and answers three questions:
+```bash
+trout look     # read the code, ask the deployment, work out what is testable
+trout facts    # what I still need from you — all optional
+trout build    # write the baseline and prove it
+trout run      # re-run it and report what changed
+```
 
-- **What is this?** Your pages, your APIs, and the transactions they add up to — a
-  page together with the state it can change, which is where regressions hurt.
-- **What does TestTrout still need from you?** Discovered by reading your source: which
-  variables the app reaches for and what each is likely for. A partial set gives a
-  partial suite — with only a URL you can probe and run API tests; add a second test
-  account and authorization tests become possible. Every blocked capability names the
-  one next thing it needs, never "configure it properly".
-- **What is untested?** Ranked, most worth doing first.
+**A baseline is what your deployment does today.** TestTrout records that and
+asserts it keeps happening. It does not know whether the current behaviour is
+*correct* — nobody has told it — and it will never ask. It knows what the
+behaviour is, and it notices the day that changes.
 
-Then press **Generate tests**. Each one is written, run against your deployment, and
-kept only if it passes — a test nobody has run is a guess, and approving one is guessing
-twice. You watch it happen a test at a time in the progress drawer, and anything that
-cannot be settled is flagged against the test it belongs to rather than assumed.
+That single rule is why there is no interview, no approval queue, and no list of
+questions about your product. The only things it asks for are concrete values it
+cannot discover:
 
-The **Tests** tab is the whole state of the suite in one list: passing, failing, needs
-you, could not run. Failures come first, because a failure is the only thing here that
-might be a regression.
+| It asks for | Because |
+|---|---|
+| A deployment URL | Nothing can be tested against code alone |
+| An API URL | Only if your backend is deployed on its own host |
+| An account | Only when something actually refused an unauthenticated request |
+| A real id | Only when the probe could not reach `/jobs/:id` on its own |
 
-Scan again whenever you like: the second scan reports what moved — new areas in the
-code, what the suite now covers, what is gone — rather than reprinting the same list.
+Every one is answerable in seconds, every one is optional, and each says what it
+unlocks. Give it a URL and nothing else, and you get every page that loads
+signed out — which on most apps is already a useful suite.
 
-Two things make that safe and useful:
-
-**It tells you what credentials your app needs**, discovered by reading your source —
-which variables it reaches for, what each is likely for, and the line it appears on.
-No re-deriving something the code already states.
-
-**A partial set gives a partial suite.** With only a URL you can probe and run API
-tests; add an anon key and a second account and authorization tests become possible.
-Each blocked capability names the single next thing it needs, never "configure it
-properly".
-
-Secret values are written to a gitignored `.env`; committed configuration holds only
-`env:NAME` references, and a literal secret typed into a config field is rejected.
+Everything it works out is kept as an **artifact** in the sidebar — the project
+map, the form, the test plan, the baseline suite — so nothing important is three
+screens up in a chat scrollback.
 
 ## Or stay in your coding agent
 
@@ -107,26 +99,26 @@ trout mcp /path/to/your/project
 
 Point your agent at the skill in [`.claude/skills/`](.claude/skills/), or tell it:
 
-> Use the TestTrout MCP server. Scan the repo, show me what's untested ranked by
-> importance, draft tests for the top five, and run them.
+> Use the TestTrout MCP server. Look at the repo, tell me what it still needs
+> from me, then build the baseline and run it.
 
-Thirteen tools, bound to one project so an agent cannot act on the wrong repository:
+Seven tools, bound to one project so an agent cannot act on the wrong repository:
 
 | | |
 |---|---|
-| `scan` `surfaces` | Understand the codebase. No API key, no network. |
-| `probe` | See what the deployed app actually does, in a real browser. |
-| `intent` `gaps` | Rank what is untested, and say why. |
-| `propose` `approve` `generate` | Draft, review, compile to real test files. |
-| `run` `certify` `report` | Execute, prove determinism, read evidence. |
-| `doctor` | What is missing, and how to fix it. |
+| `look` | Read the code, ask the deployment, work out what is testable. |
+| `facts` `set_facts` | What concrete values are missing; save what the user gives. |
+| `plan` | What can be tested now, and what each blocked item needs. |
+| `build` | Write the baseline and prove it against the deployment. |
+| `run` `suite` | Re-run it, and read what every test is doing. |
 
-Plus `trout://surfaces`, `trout://intent`, `trout://config`, `trout://scenarios` as
-resources, so bulk state never crowds out an agent's context window.
+Plus `trout://map`, `trout://facts`, `trout://plan`, `trout://config`,
+`trout://scenarios` as resources, so bulk state never crowds out an agent's
+context window.
 
 ## What it understands
 
-`trout scan` is fully deterministic — no model, no network, safe on a repo you just
+`trout look` reads code with no network access at all, so it is safe on a repo you just
 cloned. On a typical Supabase app it finds:
 
 | Surface | Example |
@@ -146,7 +138,7 @@ security** — meaning it is world-writable through the anon key. That is usuall
 
 Tests reach your app the way a user does: HTTP against your endpoints, and a real
 browser against your interface. Sign-in goes through your own login form, which
-`trout probe` locates once so tests replay a known form instead of guessing.
+`trout look` locates once so tests replay a known form instead of guessing.
 
 So the whole thing needs **a URL and two test accounts**. No anon key, no service
 role, no project credentials — nothing most teams would reasonably refuse to hand a
@@ -163,19 +155,23 @@ changed asserts the new behaviour is correct by construction — it cannot catch
 regression. TestTrout certifies a suite against a *working* deployment first, so a
 failure means something.
 
-**Deterministic core, model at the edges.** Scanning, ranking, execution, and failure
-classification never call a model. The model only interprets your intent, refines
-wording, and picks which observed elements to assert on. Every ranking is the sum of
-named contributions:
+**No model, anywhere.** Not in scanning, not in planning, not in writing a test.
+Every assertion traces to something the deployment actually did, which is why the
+same inputs always produce the same suite and why there is no API key to configure.
 
-```
-critical  authorization  A user cannot read another user's rows in payments   100
-  · critical surface
-  · policy: exists (select 1 from orders o where o.id = payments.order_id …)
+**Every assertion carries its provenance**, and in a baseline it is always
+`observed` — with the evidence written into the generated file:
+
+```typescript
+// observed: the page title when /orders was loaded
+await expect(page).toHaveTitle('Orders');
+// observed: seen on /orders at baseline
+await expect(page.getByTestId('orders-table')).toBeVisible();
 ```
 
-**Every assertion carries its provenance.** `derived` from a policy, `observed` in a
-real browser, or `inferred` by a model — and inferred alone can never block anything.
+**It only ever sends a GET.** Endpoint tests replay the request the probe made,
+whatever methods the endpoint declares, so pointing this at production cannot
+change anything there.
 
 **A failure is classified before it is reported.** Only `assertion_failure` is a product
 signal. Auth failures, unreachable databases, and blocked third-party calls are about
@@ -184,10 +180,11 @@ the harness, and an inconclusive run is *never* upgraded to a pass.
 ## Everything from the terminal
 
 ```bash
-trout scan          # understand the code
-trout init          # connect a deployment
-trout gaps          # what's missing, ranked, with reasons
-trout run           # execute, with evidence behind every result
+trout add ~/code/my-app --url https://my-app.vercel.app
+trout look          # read the code, ask the deployment
+trout facts         # what I still need — all optional
+trout build         # write the baseline and prove it
+trout run           # re-run it; a failure means behaviour changed
 ```
 
 Every command supports `--json`. Full walkthrough in [docs/setup.md](docs/setup.md).
@@ -198,6 +195,8 @@ Your test suite stays in your repository, committed and reviewable:
 
 ```
 .trout/scenarios/*.yaml    what each test asserts, in plain language
+.trout/facts.yaml          what was asked for — never a secret value
+.trout/plan.yaml           what can be tested, and what is waiting
 .trout/config.yaml         deployments and env: references, never secrets
 tests/trout/               generated Playwright and Vitest files
 ```
@@ -231,21 +230,8 @@ guarantees are enforced in code rather than documented:
   suite reports green while testing nothing.
 - **Secrets stay out of committed files.** `.trout/config.yaml` holds `env:` references
   only. Values live in a gitignored `.env`.
-- **Nothing is hosted.** Nothing leaves your machine except calls to the model provider
-  you chose. No telemetry.
-
-## Model providers
-
-Anthropic, OpenAI, or Kimi — or any OpenAI-compatible endpoint via `base_url`.
-
-```yaml
-model:
-  provider: anthropic
-  api_key: env:ANTHROPIC_API_KEY
-```
-
-Analysis never calls a model, so `trout scan`, `trout gaps`, and `trout run` all work
-with no key at all.
+- **Nothing is hosted, and nothing leaves your machine.** There is no model to
+  call and no account to make. No telemetry.
 
 ## Supported stacks
 

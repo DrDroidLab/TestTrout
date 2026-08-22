@@ -7,10 +7,8 @@ from pathlib import Path
 from testtrout.analysis.parser import parse_file
 from testtrout.analysis.requirements import from_source, implied
 from testtrout.app import settings
-from testtrout.domain.config import Config, Entrypoint, SupabaseConfig, TestUser
-from testtrout.domain.requirements import Capability, RequirementKind
+from testtrout.domain.requirements import RequirementKind
 from testtrout.domain.surface import Policy, ProjectInfo, ScanResult, SourceLocation
-from testtrout.planning.readiness import assess, kinds_possible
 from testtrout.store import QaPaths
 
 
@@ -93,44 +91,6 @@ def test_test_accounts_are_implied_by_policies():
 # --------------------------------------------------------------- readiness
 
 
-def test_nothing_configured_means_nothing_is_ready():
-    plan = assess(Config())
-    assert plan.available == []
-    assert all(r.next_step for r in plan.blocked)
-
-
-def test_a_url_alone_unlocks_api_tests():
-    """A partial set gives a partial suite, not an error."""
-    config = Config(entrypoints=[Entrypoint(name="p", url="https://x.dev")])
-    plan = assess(config)
-    assert plan.can(Capability.API_TESTS)
-    assert not plan.can(Capability.AUTHORIZATION_TESTS)
-    assert "endpoint" in kinds_possible(plan)
-    assert "authorization" not in kinds_possible(plan)
-
-
-def test_authorization_needs_two_accounts(monkeypatch):
-    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
-    one = Config(
-        supabase=SupabaseConfig(url="https://x.supabase.co", anon_key="env:SUPABASE_ANON_KEY"),
-        test_users=[TestUser(role="owner", email="env:A", password="env:B")],
-    )
-    plan = assess(one)
-    assert not plan.can(Capability.AUTHORIZATION_TESTS)
-    blocked = next(r for r in plan.blocked if r.capability is Capability.AUTHORIZATION_TESTS)
-    assert "second test account" in " ".join(blocked.missing)
-
-
-def test_every_blocked_capability_names_one_concrete_thing():
-    """ "Configure it properly" is not an actionable message."""
-    for item in assess(Config()).blocked:
-        assert item.missing, f"{item.capability} is blocked with nothing to do about it"
-        assert len(item.missing[0]) > 15
-
-
-# ---------------------------------------------------------------- settings
-
-
 def test_a_literal_secret_is_refused_by_configuration(tmp_path: Path):
     paths = QaPaths(root=tmp_path)
     try:
@@ -168,11 +128,11 @@ def test_an_empty_value_clears_a_secret(tmp_path: Path):
 
 
 def test_a_partial_patch_leaves_other_sections_alone(tmp_path: Path):
-    """Editing deployments must not silently reset the model provider."""
+    """Editing deployments must not silently reset the test accounts."""
     paths = QaPaths(root=tmp_path)
-    settings.apply(paths, {"model": {"provider": "kimi"}})
+    settings.apply(paths, {"test_users": [{"role": "owner"}]})
     settings.apply(paths, {"entrypoints": [{"name": "p", "url": "https://x.dev"}]})
 
     config = settings.view(paths).config
-    assert config.model.provider.value == "kimi"
+    assert [u.role for u in config.test_users] == ["owner"]
     assert config.entrypoints[0].url == "https://x.dev"

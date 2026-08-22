@@ -9,8 +9,6 @@ isolated and optional:
 ``testtrout.analysis``
     Deterministic static analysis of a repository. Never calls a model, so it
     is fast, free, offline, and verifiable with golden files.
-``testtrout.llm``
-    The only component permitted to talk to a model provider.
 ``testtrout.store``
     Reads and writes the ``.trout/`` directory, which is the single source of
     truth shared by the CLI, the web interface, and any agent driving them.

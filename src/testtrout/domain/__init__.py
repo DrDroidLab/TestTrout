@@ -15,7 +15,6 @@ from testtrout.domain.config import (
     EntrypointKind,
     ExternalRule,
     IsolationStrategy,
-    ModelConfig,
     SubstitutionConfig,
     TestUser,
 )
@@ -49,7 +48,6 @@ __all__ = [
     "ExternalDependency",
     "ExternalRule",
     "IsolationStrategy",
-    "ModelConfig",
     "Operation",
     "Policy",
     "ScanResult",

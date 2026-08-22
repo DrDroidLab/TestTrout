@@ -116,7 +116,7 @@ class RepoRegistry:
         # work meant a result written by an older build — one that could not yet
         # read this repository's layout — silently shadowed a fixed scanner, and
         # the interface faithfully displayed its zeros.
-        JobQueue(self.database).enqueue(record.id, "scan")
+        JobQueue(self.database).enqueue(record.id, "understand")
         return True
 
     # ------------------------------------------------------------ querying

@@ -42,7 +42,7 @@ class SvelteKitAdapter:
 sveltekit = "my_adapter.svelte:SvelteKitAdapter"
 ```
 
-Install it alongside `testtrout` and `trout scan` picks it up.
+Install it alongside `testtrout` and `trout look` picks it up.
 
 ## Rules
 

@@ -22,7 +22,6 @@ from testtrout.domain.overview import (
     ScanDelta,
     TransactionSummary,
 )
-from testtrout.domain.requirements import Plan
 from testtrout.domain.scenario import ScenarioIndex, ScenarioStatus
 from testtrout.domain.surface import Operation, ScanResult
 
@@ -52,9 +51,7 @@ def _covered(surface_ids: list[str], index: ScenarioIndex) -> bool:
     return any(sid in accepted for sid in surface_ids)
 
 
-def build(
-    scan: ScanResult, index: ScenarioIndex | None = None, plan: Plan | None = None
-) -> ProjectOverview:
+def build(scan: ScanResult, index: ScenarioIndex | None = None) -> ProjectOverview:
     """Describe the project, and how much of it is currently tested."""
     index = index or ScenarioIndex()
 
@@ -182,7 +179,6 @@ def build(
         apis=sorted(apis, key=lambda a: (a.criticality.rank, a.path)),
         transactions=sorted(transactions, key=lambda t: (t.criticality.rank, t.name)),
         coverage=coverage,
-        needs_from_you=[item.missing[0] for item in (plan.blocked if plan else []) if item.missing],
     )
 
 

@@ -13,15 +13,12 @@ from rich.text import Text
 
 from testtrout.app.models import RepoRecord
 from testtrout.app.settings import ConfigView
-from testtrout.domain.gap import GapMap
-from testtrout.domain.intent import ProductIntent
+from testtrout.domain.candidate import TestPlan
+from testtrout.domain.fact import FactKind, FactSheet
 from testtrout.domain.observation import Divergence, ProbeResult
-from testtrout.domain.overview import ProjectOverview, ScanDelta
-from testtrout.domain.question import QuestionLog
 from testtrout.domain.run import RunRecord, RunStatus
 from testtrout.domain.scenario import ScenarioIndex
 from testtrout.domain.surface import Criticality, ScanResult
-from testtrout.planning.selection import Selection
 
 console = Console()
 error_console = Console(stderr=True)
@@ -82,55 +79,6 @@ def scan_summary(result: ScanResult) -> None:
             if level in by_level
         ]
         console.print("  ".join(parts))
-
-
-def project_overview(overview: ProjectOverview, changed: ScanDelta) -> None:
-    """What the product is, what moved since last time, and what is left.
-
-    Printed after every scan, because "I scanned — now what?" is the question
-    a scan should answer. The second half is the useful half: a rescan that
-    reprints the same forty items tells you nothing, while "three of those now
-    have tests, and here is the next one to write" tells you where you are.
-    """
-    console.print()
-    console.print(overview.summary)
-
-    coverage = overview.coverage
-    console.print()
-    console.print(
-        f"[bold]coverage {coverage.overall_percent}%[/bold]  "
-        f"[dim]transactions {coverage.transactions_percent}% · "
-        f"pages {coverage.pages_percent}% · apis {coverage.apis_percent}%[/dim]"
-    )
-
-    for label, items, style in (
-        ("new since last scan", changed.new_areas, "cyan"),
-        ("now covered", changed.newly_covered, "green"),
-        ("no longer in the code", changed.gone, "yellow"),
-    ):
-        if not items:
-            continue
-        console.print()
-        console.print(f"[{style}]{label}[/{style}]  [dim]{len(items)}[/dim]")
-        for item in items[:5]:
-            console.print(f"  {item}", markup=False)
-        if len(items) > 5:
-            console.print(f"  [dim]and {len(items) - 5} more[/dim]")
-
-    if changed.still_missing:
-        console.print()
-        console.print(
-            f"[bold]{len(changed.still_missing)} untested[/bold] "
-            "[dim]— most worth doing first[/dim]"
-        )
-        for item in changed.still_missing[:5]:
-            console.print(f"  {item}", markup=False)
-
-    if overview.needs_from_you:
-        console.print()
-        console.print("[yellow]needs you[/yellow]")
-        for item in overview.needs_from_you:
-            console.print(f"  {item}", markup=False)
 
 
 def surface_table(result: ScanResult, limit: int | None = None) -> None:
@@ -262,109 +210,12 @@ def divergences(items: list[Divergence]) -> None:
             console.print(f"  [dim]… and {len(entries) - 6} more[/dim]")
 
 
-def intent_summary(intent: ProductIntent, warnings: list[str] | None = None) -> None:
-    """Print captured product intent."""
-    console.print()
-    if intent.summary:
-        console.print(intent.summary)
-    if intent.audience:
-        console.print(f"[dim]for: {intent.audience}[/dim]")
-
-    if intent.journeys:
-        console.print()
-        table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
-        table.add_column("criticality")
-        table.add_column("journey", style="bold")
-        table.add_column("consequence if it breaks", overflow="fold")
-        table.add_column("surfaces", justify="right")
-        for journey in sorted(intent.journeys, key=lambda j: j.criticality.rank):
-            table.add_row(
-                criticality_text(journey.criticality),
-                journey.name,
-                journey.consequence or "[dim]not stated[/dim]",
-                str(len(journey.surfaces)),
-            )
-        console.print(table)
-
-    if intent.never_break:
-        console.print()
-        console.print("[bold]Must always hold[/bold]")
-        for item in intent.never_break:
-            console.print(f"  · {item}")
-
-    if intent.unanswered:
-        console.print()
-        console.print(f"[yellow]{len(intent.unanswered)} open question(s)[/yellow]")
-        for question in intent.unanswered[:8]:
-            console.print(f"  [yellow]?[/yellow] {question.question}")
-            if question.context:
-                console.print(f"    [dim]{question.context}[/dim]")
-
-    for warning in warnings or []:
-        console.print(f"  [yellow]·[/yellow] {warning}")
-
-
-def gap_map(result: GapMap, limit: int | None = None, ready_only: bool = False) -> None:
-    """Print the ranked gap map."""
-    coverage = result.coverage
-    console.print()
-    console.print(
-        f"[bold]{coverage.percent}%[/bold] of surfaces covered "
-        f"([bold]{coverage.critical_percent}%[/bold] of critical ones) · "
-        f"{coverage.policies_covered}/{coverage.policies_total} policies"
-    )
-
-    gaps = result.ranked(limit=limit, ready_only=ready_only)
-    if not gaps:
-        console.print()
-        console.print("[green]nothing to propose[/green]")
-        return
-
-    total = sum(g.estimated_seconds for g in gaps)
-    console.print(
-        f"[dim]{len(gaps)} gap(s) shown · ~{total // 60}m {total % 60}s to run them all[/dim]"
-    )
-    console.print()
-
-    table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
-    table.add_column("criticality")
-    table.add_column("kind")
-    table.add_column("what the test would assert", overflow="fold")
-    table.add_column("why", overflow="fold", style="dim")
-
-    for gap in gaps:
-        prefix = "" if gap.ready else "[red]blocked[/red] "
-        table.add_row(
-            criticality_text(gap.criticality),
-            gap.kind.value.replace("_", " "),
-            prefix + gap.title,
-            "; ".join(gap.reasons[1:3]) or gap.reasons[0],
-        )
-    console.print(table)
-
-    blocked_gaps = [g for g in result.gaps if not g.ready]
-    if blocked_gaps and not ready_only:
-        console.print()
-        console.print(f"[yellow]{len(blocked_gaps)} gap(s) blocked[/yellow]")
-        seen: set[str] = set()
-        for gap in blocked_gaps:
-            for blocker in gap.blockers:
-                if blocker.code in seen:
-                    continue
-                seen.add(blocker.code)
-                console.print(f"  [yellow]·[/yellow] {blocker.message}")
-
-    for note in result.notes:
-        console.print()
-        console.print(f"[dim]note: {note}[/dim]")
-
-
 def scenario_table(index: ScenarioIndex, limit: int | None = None) -> None:
     """Print scenarios with their status."""
     scenarios = index.scenarios[:limit] if limit else index.scenarios
     if not scenarios:
         console.print()
-        console.print("[dim]no scenarios yet — run `trout propose`[/dim]")
+        console.print("[dim]no tests yet — run `trout build`[/dim]")
         return
 
     styles = {
@@ -485,32 +336,6 @@ def run_summary(record: RunRecord) -> None:
         console.print(f"[dim]note: {note}[/dim]")
 
 
-def selection(chosen: Selection) -> None:
-    """Explain which scenarios a change selected, and why."""
-    console.print()
-    console.print(
-        f"[bold]{len(chosen.scenarios)}[/bold] scenario(s) selected from "
-        f"{len(chosen.changed_files)} changed file(s)"
-    )
-    if chosen.changed_surfaces:
-        console.print(f"[dim]changed surfaces: {', '.join(chosen.changed_surfaces[:6])}[/dim]")
-
-    for scenario_id, why in list(chosen.reasons.items())[:12]:
-        console.print(f"  · {scenario_id.replace('scenario:', '')}")
-        console.print(f"    [dim]{'; '.join(why)}[/dim]")
-
-    if chosen.uncovered_surfaces:
-        console.print()
-        console.print(
-            f"[yellow]{len(chosen.uncovered_surfaces)} changed surface(s) have no test[/yellow]"
-        )
-        for surface_id in chosen.uncovered_surfaces[:8]:
-            console.print(f"  [yellow]·[/yellow] {surface_id}")
-
-    for note in chosen.notes:
-        console.print(f"[dim]note: {note}[/dim]")
-
-
 def repo_table(records: list[RepoRecord]) -> None:
     """Print linked repositories."""
     table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
@@ -536,38 +361,6 @@ def repo_table(records: list[RepoRecord]) -> None:
     console.print(table)
 
 
-def plan(view: ConfigView) -> None:
-    """Print what is possible now and what each gap would unlock."""
-    console.print()
-    ready = [r for r in view.plan.readiness if r.ready]
-    console.print(f"[bold]{len(ready)} of {len(view.plan.readiness)}[/bold] capabilities available")
-    console.print()
-
-    for item in view.plan.readiness:
-        mark = "[green]✓[/green]" if item.ready else "[yellow]○[/yellow]"
-        console.print(f"{mark} [bold]{item.capability.label}[/bold]")
-        console.print(f"   [dim]{item.detail}[/dim]")
-        for missing in item.missing:
-            console.print(f"   [yellow]needs:[/yellow] {missing}")
-
-    unmet = [r for r in view.plan.required() if not view.env_present.get(r.name, False)]
-    if unmet:
-        console.print()
-        console.print(
-            "[bold]Credentials this app needs[/bold] [dim](discovered from its source)[/dim]"
-        )
-        table = Table(box=None, padding=(0, 2, 0, 0), header_style="dim")
-        table.add_column("name", style="bold")
-        table.add_column("what it is for", overflow="fold")
-        table.add_column("found in", style="dim")
-        for requirement in unmet:
-            where = str(requirement.locations[0]) if requirement.locations else "—"
-            table.add_row(requirement.name, requirement.purpose, where)
-        console.print(table)
-        console.print()
-        console.print("[dim]set them with `trout config --set-secret NAME=value`[/dim]")
-
-
 def config_view(view: ConfigView) -> None:
     """Print current configuration, with secret values withheld."""
     config = view.config
@@ -591,9 +384,6 @@ def config_view(view: ConfigView) -> None:
         "test users",
         ", ".join(u.role for u in config.test_users) or "[dim]none[/dim]",
     )
-    table.add_row(
-        "model", f"{config.model.provider.value} {config.model.model or '(provider default)'}"
-    )
     console.print(table)
 
     if view.env_present:
@@ -606,26 +396,90 @@ def config_view(view: ConfigView) -> None:
             console.print(f"  {mark}  {name}")
 
 
-def questions(log: QuestionLog) -> None:
-    """Print the open question queue."""
-    open_items = log.open_questions()
-    if not open_items:
+def plan_summary(plan: TestPlan, sheet: FactSheet) -> None:
+    """After a look: what I can do, and what I need to do more."""
+    counts = plan.counts()
+    console.print()
+    console.print(
+        f"[bold]{counts['ready']}[/bold] thing(s) I can test right now  "
+        f"[dim]· {counts['waiting']} waiting on you[/dim]"
+    )
+    for candidate in plan.ready[:6]:
+        console.print(f"  [green]•[/green] {candidate.title}", markup=False)
+    if len(plan.ready) > 6:
+        console.print(f"  [dim]and {len(plan.ready) - 6} more[/dim]")
+
+    outstanding = sheet.outstanding
+    if outstanding:
         console.print()
-        console.print("[green]nothing to answer[/green] [dim]— run a scan or build first[/dim]")
+        console.print("[yellow]What I need from you[/yellow] [dim]— all optional[/dim]")
+        for fact in outstanding[:5]:
+            blocking = f" [dim](unblocks {fact.blocks})[/dim]" if fact.blocks else ""
+            console.print(f"  {fact.label}{blocking}")
+        console.print("[dim]see them all with `trout facts`[/dim]")
+
+    console.print()
+    console.print(
+        "[dim]next: `trout build` to write the baseline[/dim]"
+        if counts["ready"]
+        else "[dim]next: `trout facts` to see what would unblock this[/dim]"
+    )
+
+
+def fact_sheet(sheet: FactSheet) -> None:
+    """The form, as a list. Every item concrete, every item optional."""
+    outstanding = sheet.outstanding
+    if not outstanding:
+        console.print("[green]Nothing outstanding.[/green] Everything I asked for is filled in.")
         return
 
     console.print()
-    console.print(f"[bold]{len(open_items)} question(s)[/bold] [dim]most consequential first[/dim]")
-    for question in open_items:
-        marker = "[yellow]![/yellow]" if question.kind.blocks_work else "[dim]·[/dim]"
-        console.print()
-        console.print(f"{marker} [dim]{question.kind.label}[/dim]  {question.text}")
-        console.print(f"   [dim]{question.id}[/dim]")
-        if question.context:
-            console.print(f"   [dim]{question.context}[/dim]")
-        if question.unlocks:
-            console.print(f"   [cyan]unlocks:[/cyan] {question.unlocks}")
-        for choice in question.choices:
-            console.print(f"     [dim]·[/dim] {choice}")
+    console.print("[bold]What I need from you[/bold]  [dim]give what you have[/dim]")
+    for fact in outstanding:
+        blocking = f"  [dim]unblocks {fact.blocks}[/dim]" if fact.blocks else ""
+        console.print(f"\n[bold]{fact.id}[/bold]{blocking}")
+        console.print(f"  {fact.label}", markup=False)
+        if fact.why:
+            console.print(f"  [dim]{fact.why}[/dim]", markup=False)
+        if fact.evidence:
+            console.print(f"  [dim]why I think so: {fact.evidence}[/dim]", markup=False)
+        if fact.kind is FactKind.COMMAND:
+            console.print(f"  [cyan]{fact.placeholder}[/cyan]", markup=False)
+
     console.print()
-    console.print('[dim]answer with: trout questions --answer "<id>=<your answer>"[/dim]')
+    console.print("[dim]set one with `trout facts --set <id>=<value>`[/dim]")
+    console.print("[dim]an account takes `--set account_primary=email:password`[/dim]")
+
+    if sheet.answered:
+        console.print()
+        console.print(f"[dim]{len(sheet.answered)} already on file[/dim]")
+
+
+def plan_detail(plan: TestPlan, sheet: FactSheet) -> None:
+    """Every candidate, split by whether it can be tested yet."""
+    labels = {f.id: f.label for f in sheet.facts}
+
+    if plan.ready:
+        console.print()
+        console.print(f"[green]Ready — {len(plan.ready)}[/green]")
+        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
+        table.add_column(style="dim", width=9)
+        table.add_column()
+        table.add_column(style="dim")
+        for candidate in plan.ready:
+            table.add_row(candidate.kind.label, candidate.title, candidate.detail)
+        console.print(table)
+
+    if plan.waiting:
+        console.print()
+        console.print(f"[yellow]Waiting — {len(plan.waiting)}[/yellow]")
+        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
+        table.add_column(style="dim", width=9)
+        table.add_column()
+        table.add_column(style="yellow")
+        for candidate in plan.waiting[:30]:
+            needs = ", ".join(labels.get(n, n) for n in candidate.needs) or candidate.detail
+            table.add_row(candidate.kind.label, candidate.title, needs)
+        console.print(table)
+        if len(plan.waiting) > 30:
+            console.print(f"  [dim]and {len(plan.waiting) - 30} more[/dim]")

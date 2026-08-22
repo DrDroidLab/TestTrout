@@ -388,7 +388,7 @@ def _authenticate(
         return AuthOutcome(
             False,
             "none",
-            f"no test user with role {role!r} in .trout/config.yaml — run `trout init`",
+            f"no test user with role {role!r} in .trout/config.yaml — run `trout facts`",
         )
     # Prefer the app's own login form. It needs nothing but a URL and a
     # password, where every other adapter needs credentials a developer may

@@ -1,6 +1,6 @@
 """The scan orchestrator: repository in, :class:`ScanResult` out.
 
-This is the entry point behind ``trout scan``. It is deliberately the only place
+This is the entry point behind ``trout look``. It is deliberately the only place
 that knows the *order* things happen in; each extractor stays independent and
 testable on its own.
 

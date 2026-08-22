@@ -11,8 +11,9 @@ class QaPaths:
     """Resolved paths inside a project's ``.trout/`` directory.
 
     Committed to version control: ``config.yaml``, ``surfaces.yaml``,
-    ``intent.yaml``, ``scenarios/``, ``contracts/``. These describe what the
-    suite *is*, and reviewing a change to them in a pull request is a feature.
+    ``facts.yaml``, ``plan.yaml``, ``overview.yaml``, ``scenarios/``,
+    ``contracts/``. These describe what the suite *is*, and reviewing a change
+    to them in a pull request is a feature.
 
     Not committed (see ``.gitignore``): ``runs/``, ``evidence/``, ``.cache/``.
     These are outputs, and they are large.
@@ -83,19 +84,23 @@ class QaPaths:
         return self.dir / "surfaces.yaml"
 
     @property
-    def intent(self) -> Path:
-        """Captured product intent."""
-        return self.dir / "intent.yaml"
+    def facts(self) -> Path:
+        """What the tool needs from a person, and what it already has.
+
+        Committed. It holds the *shape* of what was asked for, never a secret
+        value — those live in the gitignored ``.env``.
+        """
+        return self.dir / "facts.yaml"
 
     @property
-    def questions(self) -> Path:
-        """What the tool needs answered.
+    def plan(self) -> Path:
+        """What can be tested, and what each blocked item is waiting for."""
+        return self.dir / "plan.yaml"
 
-        Committed: an answer is a decision about the product, and the next
-        person to read the suite benefits from knowing why a test asserts what
-        it does.
-        """
-        return self.dir / "questions.yaml"
+    @property
+    def conversation(self) -> Path:
+        """The session log. Not committed — the artifacts hold what matters."""
+        return self.dir / ".cache" / "conversation.yaml"
 
     @property
     def overview(self) -> Path:

@@ -4,7 +4,7 @@ This is the only sign-in approach that needs nothing a developer would refuse
 to hand over: a URL and a test password. No database credentials, no API keys.
 
 The obvious objection is that every application's form is different. The answer
-is to discover it once rather than guess on every run — ``trout probe`` locates
+is to discover it once rather than guess on every run — ``trout look`` locates
 the fields, records how to reach them, and everything afterwards just replays
 that. When discovery is wrong, the locators are ordinary configuration a
 developer can correct by hand.

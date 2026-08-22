@@ -1,19 +1,20 @@
 """The local web application.
 
-Multi-repository and database-backed. Every endpoint calls the same library
-function the CLI calls, so behaviour that differs between the two interfaces is
-a bug rather than a feature.
+Small on purpose. The interface is a conversation with a sidebar of artifacts,
+so the API has exactly the shape that implies: a few routes that render an
+artifact, one that accepts the facts a person can supply, and the job plumbing
+the conversation narrates.
 
-Three rules constrain what the API may do:
+Three rules constrain what it may do:
 
-*It cannot change a deployment's safety posture.* There is no endpoint that
-marks an entrypoint disposable. One click away from pointing test writes at
+*It cannot change a deployment's safety posture.* There is no route that marks
+an entrypoint disposable. One click away from pointing test writes at
 production is exactly the mistake the guard exists to prevent, so that stays a
 deliberate edit to a committed file.
 
 *It does not execute work itself.* Actions enqueue a job; the worker runs it.
-That keeps request handling fast and makes per-repository serialisation a
-property of the queue rather than something each handler has to remember.
+That keeps request handling fast and makes per-project serialisation a property
+of the queue rather than something each handler has to remember.
 
 *It binds to loopback.* This reads a developer's credentials and can drive
 their deployments; it is not something to expose on a network.
@@ -33,15 +34,10 @@ from testtrout import __version__
 from testtrout.app import Database, JobQueue, RepoRegistry
 from testtrout.app.queue import UnknownJobKindError
 from testtrout.app.repos import RepoError
-from testtrout.domain.config import Config
-from testtrout.domain.gap import GapMap
-from testtrout.domain.intent import ProductIntent
-from testtrout.domain.observation import ProbeResult
-from testtrout.domain.question import QuestionLog
+from testtrout.app.session import Session
+from testtrout.domain.artifact import Artifact, ArtifactKind
 from testtrout.domain.run import RunRecord
-from testtrout.domain.scenario import ScenarioIndex, ScenarioStatus
-from testtrout.domain.surface import ScanResult
-from testtrout.store import QaPaths, read_model, write_model
+from testtrout.store import QaPaths
 
 STATIC = Path(__file__).parent / "static"
 
@@ -63,41 +59,8 @@ def create_app(database: Database | None = None) -> FastAPI:
         except RepoError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    def config_of(paths: QaPaths) -> Config:
-        return read_model(paths.config, Config) if paths.config.is_file() else Config()
-
-    def scan_of(paths: QaPaths) -> ScanResult | None:
-        return read_model(paths.surfaces, ScanResult) if paths.surfaces.is_file() else None
-
-    def probe_of(paths: QaPaths) -> ProbeResult | None:
-        entrypoint = config_of(paths).entrypoint()
-        if entrypoint is None:
-            return None
-        path = paths.observed / f"{entrypoint.name}.yaml"
-        return read_model(path, ProbeResult) if path.is_file() else None
-
-    def scenarios_of(paths: QaPaths) -> tuple[ScenarioIndex, list[str]]:
-        from testtrout.authoring.store import load_all
-
-        return load_all(paths.scenarios)
-
-    def gaps_of(paths: QaPaths) -> GapMap | None:
-        from testtrout.planning import gaps as planner
-        from testtrout.planning.existing_tests import detect
-
-        scan = scan_of(paths)
-        if scan is None:
-            return None
-        config = config_of(paths)
-        index, _ = scenarios_of(paths)
-        return planner.build(
-            scan,
-            intent=read_model(paths.intent, ProductIntent) if paths.intent.is_file() else None,
-            probe=probe_of(paths),
-            existing=detect(paths.root, scan),
-            roles=[u.role for u in config.test_users],
-            scenarios=index,
-        )
+    def session_for(repo_id: int) -> Session:
+        return Session(paths=paths_for(repo_id))
 
     # --------------------------------------------------------------- repos
 
@@ -195,126 +158,199 @@ def create_app(database: Database | None = None) -> FastAPI:
         except gh.GitHubError as exc:
             return {"authenticated": False, "error": str(exc), "repos": []}
 
-    # ------------------------------------------------------- per-repo read
+    # ------------------------------------------------------- project state
 
-    @app.get("/api/repos/{repo_id}/overview")
-    def overview(repo_id: int) -> dict[str, Any]:
-        """Everything the dashboard needs for one repository."""
-        paths = paths_for(repo_id)
+    @app.get("/api/projects/{repo_id}")
+    def project(repo_id: int) -> dict[str, Any]:
+        """The header: what this project is and whether anything is running."""
+        session = session_for(repo_id)
         record = registry.get(repo_id)
-        scan = scan_of(paths)
-        config = config_of(paths)
-        index, problems = scenarios_of(paths)
-        gaps = gaps_of(paths)
-        observed = probe_of(paths)
-        history = registry.run_history(repo_id, limit=20)
-
+        scan = session.scan
+        entrypoint = session.config.entrypoint()
+        active = queue.active(repo_id)
         return {
-            "repo": record.model_dump(mode="json") if record else None,
+            "id": repo_id,
+            "name": record.name if record else "",
+            "path": str(session.paths.root),
             "scanned": scan is not None,
-            "scan_stale": (scan is not None and scan.tool_version != __version__),
-            "scan_empty": scan is not None and sum(scan.counts.values()) == 0,
-            "project": scan.project.model_dump(mode="json") if scan else None,
-            "counts": scan.counts if scan else {},
-            "coverage": (
-                gaps.coverage.model_dump(mode="json")
-                | {
-                    "percent": gaps.coverage.percent,
-                    "critical_percent": gaps.coverage.critical_percent,
-                }
-                if gaps
-                else None
-            ),
-            "gap_total": len(gaps.gaps) if gaps else 0,
-            "gap_ready": len([g for g in gaps.gaps if g.ready]) if gaps else 0,
-            "notes": gaps.notes if gaps else [],
-            "scenarios": index.counts,
-            "scenario_problems": problems,
-            "entrypoints": [
-                {"name": e.name, "url": e.url, "disposable": e.disposable, "writable": e.writable}
-                for e in config.entrypoints
-            ],
-            "test_users": [u.role for u in config.test_users],
-            "model": {
-                "provider": config.model.provider.value,
-                "model": config.model.model or "provider default",
-            },
-            "substitution": [
-                {"name": r.name, "match": r.match} for r in config.substitution.external
-            ],
-            "isolation": config.supabase.isolation.value,
-            "probe": (
-                {
-                    "entrypoint": observed.entrypoint,
-                    "reachable": observed.reachable_count,
-                    "total": len(observed.screens),
-                    "divergences": len(observed.divergences),
-                }
-                if observed
-                else None
-            ),
-            "history": [h.model_dump(mode="json") for h in history],
-            "authorization_possible": len(config.test_users) >= 2,
-            "open_questions": len(_questions(paths).open_questions()),
+            "stack": " + ".join(x for x in (scan.project.framework, scan.project.backend) if x)
+            if scan
+            else "",
+            "deployment": entrypoint.url if entrypoint else "",
+            "writable": bool(entrypoint and entrypoint.writable),
+            "busy": active.kind if active else "",
         }
 
-    @app.get("/api/repos/{repo_id}/surfaces")
-    def surfaces(repo_id: int) -> dict[str, Any]:
-        """The full surface map."""
-        scan = scan_of(paths_for(repo_id))
+    # ----------------------------------------------------------- artifacts
+
+    @app.get("/api/projects/{repo_id}/artifacts")
+    def artifacts(repo_id: int) -> dict[str, Any]:
+        """The sidebar: what this project has produced so far.
+
+        A chat is a good way to drive work and a terrible way to store it.
+        Everything durable is listed here instead, so nothing important is
+        three screens up in the scrollback.
+        """
+        session = session_for(repo_id)
+        scan = session.scan
+        plan = session.plan
+        sheet = session.facts
+        index, _ = _scenarios(session)
+        certified = [s for s in index.scenarios if s.status.value == "certified"]
+
+        out = [
+            Artifact(
+                kind=ArtifactKind.MAP,
+                ready=scan is not None,
+                summary=(
+                    f"{len(scan.screens)} pages · {len(scan.endpoints)} endpoints · "
+                    f"{len(scan.tables)} tables"
+                    if scan
+                    else "not read yet"
+                ),
+            ),
+            Artifact(
+                kind=ArtifactKind.FACTS,
+                ready=bool(sheet.facts),
+                summary=(
+                    f"{len(sheet.outstanding)} still to fill in"
+                    if sheet.outstanding
+                    else "everything I asked for is filled in"
+                ),
+                attention=len(sheet.outstanding),
+            ),
+            Artifact(
+                kind=ArtifactKind.PLAN,
+                ready=bool(plan.candidates),
+                summary=(
+                    f"{len(plan.ready)} ready · {len(plan.waiting)} waiting"
+                    if plan.candidates
+                    else "nothing worked out yet"
+                ),
+            ),
+            Artifact(
+                kind=ArtifactKind.SUITE,
+                ready=bool(certified),
+                summary=(f"{len(certified)} proven test(s)" if certified else "no baseline yet"),
+            ),
+        ]
+        return {
+            "artifacts": [
+                a.model_dump(mode="json") | {"label": a.label, "icon": a.kind.icon} for a in out
+            ]
+        }
+
+    @app.get("/api/projects/{repo_id}/map")
+    def project_map(repo_id: int) -> dict[str, Any]:
+        """What the project is: pages, APIs, storage, deployment."""
+        session = session_for(repo_id)
+        scan = session.scan
         if scan is None:
-            return {"surfaces": [], "warnings": [], "tables": []}
+            return {"ready": False}
+
+        overview = session.overview
+        config = session.config
+        entrypoint = config.entrypoint()
         return {
-            "surfaces": [s.model_dump(mode="json", exclude_none=True) for s in scan.all_surfaces()],
-            "warnings": [w.model_dump(mode="json") for w in scan.warnings],
-            "tables": [t.model_dump(mode="json") for t in scan.tables],
+            "ready": True,
+            "summary": overview.summary if overview else "",
+            "stack": " + ".join(x for x in (scan.project.framework, scan.project.backend) if x),
+            "root": scan.project.root,
+            "pages": [
+                {"path": s.path, "component": s.component, "params": s.params} for s in scan.screens
+            ],
+            "endpoints": [
+                {"path": e.path, "methods": e.methods, "file": e.location.file}
+                for e in scan.endpoints
+            ],
+            "storage": {
+                "tables": [t.name for t in scan.tables],
+                "policies": len(scan.policies),
+                "operations": len(scan.data_operations),
+                "backend": scan.project.backend or "not detected",
+            },
+            "deployment": {
+                "url": entrypoint.url if entrypoint else "",
+                "api_url": entrypoint.api_url if entrypoint else "",
+                "api_base_var": scan.project.api_base_var,
+                "third_parties": sorted({e.vendor for e in scan.externals}),
+            },
         }
 
-    @app.get("/api/repos/{repo_id}/gaps")
-    def gaps(repo_id: int) -> dict[str, Any]:
-        """The ranked gap map."""
-        result = gaps_of(paths_for(repo_id))
-        return (
-            result.model_dump(mode="json", exclude_none=True)
-            if result
-            else {"gaps": [], "notes": ["this repository has not been scanned"], "coverage": None}
-        )
-
-    @app.get("/api/repos/{repo_id}/scenarios")
-    def scenarios(repo_id: int) -> dict[str, Any]:
-        """Every scenario specification."""
-        index, problems = scenarios_of(paths_for(repo_id))
+    @app.get("/api/projects/{repo_id}/facts")
+    def facts(repo_id: int) -> dict[str, Any]:
+        """The optional form. Every field concrete, every field skippable."""
+        sheet = session_for(repo_id).facts
         return {
-            "scenarios": [s.model_dump(mode="json", exclude_none=True) for s in index.scenarios],
-            "problems": problems,
+            "outstanding": [f.model_dump(mode="json") for f in sheet.outstanding],
+            "answered": [f.model_dump(mode="json") for f in sheet.answered],
         }
 
-    @app.get("/api/repos/{repo_id}/tests")
-    def tests(repo_id: int) -> dict[str, Any]:
-        """Every test, with its last result and anything flagged against it.
+    @app.post("/api/projects/{repo_id}/facts")
+    def save_facts(repo_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """Save whatever a person could supply, and re-derive from it.
 
-        Joined here rather than in the browser: a scenario file, a run record,
-        and the question log each hold one third of the answer, and a list that
-        does not join them shows tests with no indication of which are actually
-        protecting anything.
+        Partial answers are the normal case, not an error state. Whatever
+        arrives is applied; everything else stays outstanding and the plan is
+        recomputed so the effect of what was given is visible immediately.
+        """
+        from testtrout.app import facts as fact_writer
+
+        paths = paths_for(repo_id)
+        try:
+            applied = fact_writer.apply(paths, payload)
+        except fact_writer.FactError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Configuration changed, so what is testable changed. Re-deriving is
+        # cheap and avoids showing a plan that contradicts the form above it.
+        from testtrout.app import session as pipeline
+
+        pipeline.derive(Session(paths=paths))
+        return {"applied": applied}
+
+    @app.get("/api/projects/{repo_id}/plan")
+    def plan(repo_id: int) -> dict[str, Any]:
+        """What can be tested now, and what each blocked item needs."""
+        session = session_for(repo_id)
+        current = session.plan
+        sheet = session.facts
+        labels = {f.id: f.label for f in sheet.facts}
+        return {
+            "counts": current.counts(),
+            "ready": [c.model_dump(mode="json") for c in current.ready],
+            "waiting": [
+                c.model_dump(mode="json") | {"needs_labels": [labels.get(n, n) for n in c.needs]}
+                for c in current.waiting
+            ],
+        }
+
+    @app.get("/api/projects/{repo_id}/suite")
+    def suite(repo_id: int) -> dict[str, Any]:
+        """The baseline: every test, and what it is doing.
+
+        A test that has been proven is protecting something. One that has not
+        is not, and the difference is the only thing worth reading here.
         """
         from testtrout.planning import tests_view
 
-        paths = paths_for(repo_id)
-        index, _ = scenarios_of(paths)
-        records = []
-        if paths.runs.is_dir():
-            for path in sorted(paths.runs.glob("*.yaml"), reverse=True)[:10]:
+        session = session_for(repo_id)
+        index, _ = _scenarios(session)
+        records: list[RunRecord] = []
+        if session.paths.runs.is_dir():
+            from testtrout.store import read_model
+
+            for path in sorted(session.paths.runs.glob("*.yaml"), reverse=True)[:10]:
                 try:
                     records.append(read_model(path, RunRecord))
                 except Exception:
                     continue
 
-        views = tests_view.build(index, tests_view.latest_results(records), _questions(paths).questions)
+        views = tests_view.build(index, tests_view.latest_results(records), [])
         return {
             "tests": [
-                view.model_dump(mode="json") | {"label": view.state.label, "flagged": view.flagged}
-                for view in views
+                v.model_dump(mode="json") | {"label": v.state.label, "flagged": v.flagged}
+                for v in views
             ],
             "counts": {
                 state.value: sum(1 for v in views if v.state is state)
@@ -322,161 +358,10 @@ def create_app(database: Database | None = None) -> FastAPI:
             },
         }
 
-    @app.get("/api/repos/{repo_id}/intent")
-    def intent(repo_id: int) -> dict[str, Any]:
-        """Captured product intent."""
-        paths = paths_for(repo_id)
-        if not paths.intent.is_file():
-            return {}
-        return read_model(paths.intent, ProductIntent).model_dump(mode="json", exclude_none=True)
+    def _scenarios(session: Session):  # type: ignore[no-untyped-def]
+        from testtrout.authoring.store import load_all
 
-    @app.get("/api/repos/{repo_id}/runs")
-    def runs(repo_id: int) -> dict[str, Any]:
-        """Full run records from the repository, newest first."""
-        paths = paths_for(repo_id)
-        files = sorted(paths.runs.glob("*.yaml"), reverse=True) if paths.runs.is_dir() else []
-        out: list[dict[str, Any]] = []
-        for path in files[:25]:
-            try:
-                record = read_model(path, RunRecord)
-            except Exception:
-                continue
-            out.append(
-                {
-                    "id": record.id,
-                    "status": record.status.value,
-                    "counts": record.counts,
-                    "duration_seconds": record.duration_seconds,
-                    "entrypoint": record.entrypoint,
-                    "isolation": record.isolation,
-                    "started_at": record.started_at,
-                    "notes": record.notes,
-                    "results": [
-                        r.model_dump(mode="json", exclude_none=True) for r in record.results
-                    ],
-                }
-            )
-        return {"runs": out}
-
-    # ------------------------------------------------------ per-repo write
-
-    @app.post("/api/repos/{repo_id}/scenarios/{scenario_id}/status")
-    def set_status(repo_id: int, scenario_id: str, payload: dict[str, str]) -> dict[str, Any]:
-        """Approve or reject one scenario.
-
-        A scenario with unanswered questions is refused, exactly as on the CLI —
-        approving it would produce a test that passes vacuously.
-        """
-        from testtrout.authoring.store import save
-
-        paths = paths_for(repo_id)
-        index, _ = scenarios_of(paths)
-        scenario = index.get(scenario_id)
-        if scenario is None:
-            raise HTTPException(status_code=404, detail=f"no scenario {scenario_id!r}")
-
-        target = payload.get("status", "")
-        if target not in {"approved", "rejected", "draft"}:
-            raise HTTPException(status_code=400, detail=f"unsupported status {target!r}")
-        if target == "approved" and not scenario.ready_to_approve:
-            raise HTTPException(
-                status_code=409,
-                detail="This scenario has unanswered questions. Answering them first is the "
-                "point: approving it now would produce a test that passes vacuously.",
-            )
-
-        scenario.status = ScenarioStatus(target)
-        save(paths.scenarios, scenario)
-        return scenario.model_dump(mode="json", exclude_none=True)
-
-    @app.get("/api/repos/{repo_id}/project")
-    def project(repo_id: int) -> dict[str, Any]:
-        """What this project is, in product language, and how much is tested."""
-        from testtrout.planning.overview import build as build_overview
-        from testtrout.planning.readiness import assess
-
-        paths = paths_for(repo_id)
-        scan = scan_of(paths)
-        if scan is None:
-            return {"scanned": False}
-
-        index, _ = scenarios_of(paths)
-        from testtrout.app.settings import probe_of
-
-        config = config_of(paths)
-        overview = build_overview(scan, index, assess(config, scan, probe_of(paths, config)))
-        coverage = overview.coverage
-
-        # Coverage moves every time a test is certified, so it is recomputed
-        # here rather than read back; the stored overview is the snapshot from
-        # the last scan and serves only as the "before" side. Practically that
-        # means ``delta.newly_covered`` answers "what has the suite gained
-        # since I last scanned", and ``still_missing`` answers "what is left" —
-        # which is the question a rescan is actually asking.
-        from testtrout.domain.overview import ProjectOverview
-        from testtrout.planning.overview import delta as compare
-
-        previous = read_model(paths.overview, ProjectOverview) if paths.overview.is_file() else None
-        changed = compare(previous, overview)
-
-        return {
-            "scanned": True,
-            "delta": changed.model_dump(mode="json") | {"has_changes": changed.has_changes},
-            "summary": overview.summary,
-            "stack": overview.stack,
-            "pages": [p.model_dump(mode="json") for p in overview.pages],
-            "apis": [a.model_dump(mode="json") for a in overview.apis],
-            "transactions": [t.model_dump(mode="json") for t in overview.transactions],
-            "needs_from_you": overview.needs_from_you,
-            "coverage": coverage.model_dump(mode="json")
-            | {
-                "pages_percent": coverage.pages_percent,
-                "apis_percent": coverage.apis_percent,
-                "transactions_percent": coverage.transactions_percent,
-                "overall_percent": coverage.overall_percent,
-            },
-        }
-
-    # ----------------------------------------------------------- questions
-
-    def _questions(paths: QaPaths) -> QuestionLog:
-        return (
-            read_model(paths.questions, QuestionLog) if paths.questions.is_file() else QuestionLog()
-        )
-
-    @app.get("/api/repos/{repo_id}/questions")
-    def questions(repo_id: int) -> dict[str, Any]:
-        """What the tool needs answered, most consequential first."""
-        log = _questions(paths_for(repo_id))
-        return {
-            "counts": log.counts,
-            "open": [
-                q.model_dump(mode="json") | {"label": q.kind.label, "blocks": q.kind.blocks_work}
-                for q in log.open_questions()
-            ],
-            "answered": [q.model_dump(mode="json") for q in log.questions if not q.open],
-        }
-
-    @app.post("/api/repos/{repo_id}/questions/{question_id}")
-    def answer_question(repo_id: int, question_id: str, payload: dict[str, str]) -> dict[str, Any]:
-        """Record an answer, or dismiss a question as not worth answering."""
-        paths = paths_for(repo_id)
-        log = _questions(paths)
-        question = log.get(question_id)
-        if question is None:
-            raise HTTPException(status_code=404, detail=f"no question {question_id!r}")
-
-        if payload.get("dismiss"):
-            question.dismiss()
-        else:
-            answer = (payload.get("answer") or "").strip()
-            if not answer:
-                raise HTTPException(status_code=400, detail="an answer is required")
-            question.resolve(answer)
-
-        paths.ensure()
-        write_model(paths.questions, log)
-        return question.model_dump(mode="json")
+        return load_all(session.paths.scenarios)
 
     # ------------------------------------------------------------ settings
 

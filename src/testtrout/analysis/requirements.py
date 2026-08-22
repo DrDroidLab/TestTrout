@@ -20,7 +20,7 @@ import re
 
 from testtrout.analysis.parser import SourceFile
 from testtrout.domain.location import SourceLocation
-from testtrout.domain.requirements import Capability, Requirement, RequirementKind
+from testtrout.domain.requirements import Requirement, RequirementKind
 from testtrout.domain.surface import ScanResult
 
 # `import.meta.env.X` (Vite) and `process.env.X` (Next, Node).
@@ -45,26 +45,23 @@ _PUBLIC_PREFIXES = (
 
 # Ordered: the first match wins, so `SUPABASE_SERVICE_ROLE_KEY` is classified
 # as a service key before the looser anon-key rule can claim it.
-_RULES: tuple[tuple[re.Pattern[str], RequirementKind, str, tuple[Capability, ...]], ...] = (
+_RULES: tuple[tuple[re.Pattern[str], RequirementKind, str], ...] = (
     (
         re.compile(r"SUPABASE.*SERVICE.*KEY|SERVICE_ROLE"),
         RequirementKind.SUPABASE_SERVICE_KEY,
         "Seeds and resets test data. Never reaches a browser context.",
-        (),
     ),
     (
         re.compile(r"SUPABASE.*(ANON|PUBLISHABLE).*KEY|SUPABASE_KEY$"),
         RequirementKind.SUPABASE_ANON_KEY,
         "Your deployment already has this. TestTrout does not need it — tests go "
         "through your app's interface and endpoints, not its database.",
-        (),
     ),
     (
         re.compile(r"SUPABASE.*URL"),
         RequirementKind.SUPABASE_URL,
         "Your deployment already has this. Only needed here if you want TestTrout to "
         "reset the database between runs.",
-        (),
     ),
     (
         re.compile(
@@ -73,25 +70,23 @@ _RULES: tuple[tuple[re.Pattern[str], RequirementKind, str, tuple[Capability, ...
         RequirementKind.THIRD_PARTY_KEY,
         "A third-party service. Intercepted during test runs, so a real key is "
         "rarely needed — but the app may refuse to start without one.",
-        (),
     ),
 )
 
 
-def _classify(name: str) -> tuple[RequirementKind, str, tuple[Capability, ...]]:
+def _classify(name: str) -> tuple[RequirementKind, str]:
     """Work out what a variable is for, from its name."""
     bare = name
     for prefix in _PUBLIC_PREFIXES:
         bare = bare.removeprefix(prefix)
     upper = bare.upper()
 
-    for pattern, kind, purpose, enables in _RULES:
+    for pattern, kind, purpose in _RULES:
         if pattern.search(upper):
-            return kind, purpose, enables
+            return kind, purpose
     return (
         RequirementKind.OTHER,
         "Referenced by the application. It may need a value for the app to run.",
-        (),
     )
 
 
@@ -112,14 +107,12 @@ def from_source(files: dict[str, SourceFile]) -> list[Requirement]:
                     if len(existing.locations) < 5:
                         existing.locations.append(location)
                     continue
-
-                kind, purpose, enables = _classify(name)
+                kind, purpose = _classify(name)
                 found[name] = Requirement(
                     id=f"env:{name}",
                     name=name,
                     kind=kind,
                     purpose=purpose,
-                    enables=list(enables),
                     locations=[location],
                     detected_from="read by the application",
                     # A third-party key is usually only needed for the app to
@@ -155,7 +148,6 @@ def implied(scan: ScanResult) -> list[Requirement]:
             name="deployment URL",
             kind=RequirementKind.DEPLOYMENT_URL,
             purpose="Where your app is running — a preview URL, production, or localhost.",
-            enables=[Capability.PROBE, Capability.BROWSER_TESTS, Capability.API_TESTS],
             detected_from="required by TestTrout",
         )
     ]
@@ -171,7 +163,6 @@ def implied(scan: ScanResult) -> list[Requirement]:
                     f"can see, the other must not. This app has {len(scan.policies)} "
                     "row-level security policy(ies) riding on that."
                 ),
-                enables=[Capability.AUTHORIZATION_TESTS],
                 detected_from="row-level security policies found in migrations",
             )
         )
@@ -182,7 +173,6 @@ def implied(scan: ScanResult) -> list[Requirement]:
             name="model provider API key",
             kind=RequirementKind.MODEL_KEY,
             purpose="Only for intent capture and scenario wording. Scanning and running never use one.",
-            enables=[Capability.MODEL_FEATURES],
             detected_from="required by TestTrout",
             optional=True,
         )

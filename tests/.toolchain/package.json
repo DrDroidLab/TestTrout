@@ -1,0 +1,6 @@
+{
+  "name": "trout-test-toolchain",
+  "private": true,
+  "description": "Browser and node runners for the slow suite. Shared by symlink so the example fixtures stay exactly as authored.",
+  "devDependencies": { "@playwright/test": "^1", "vitest": "^2" }
+}

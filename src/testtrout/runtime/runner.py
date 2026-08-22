@@ -90,7 +90,7 @@ def run(
         generated = [s for s in generated if s.id == scenario_id]
     if not generated:
         record.notes.append(
-            "No generated tests to run. Approve scenarios with `trout approve`, then `trout generate`."
+            "No generated tests to run. Nothing has been written yet — run `trout build`."
         )
         record.finished_at = datetime.now(UTC).isoformat()
         return record

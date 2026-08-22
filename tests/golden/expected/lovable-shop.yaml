@@ -502,10 +502,6 @@ requirements:
     name: deployment URL
     kind: deployment_url
     purpose: Where your app is running — a preview URL, production, or localhost.
-    enables:
-      - probe
-      - browser_tests
-      - api_tests
     locations: []
     detected_from: required by TestTrout
     optional: false
@@ -514,8 +510,6 @@ requirements:
     kind: test_user
     purpose: Signing in as two accounts is how authorization is tested — what one can see, the other must
       not. This app has 4 row-level security policy(ies) riding on that.
-    enables:
-      - authorization_tests
     locations: []
     detected_from: row-level security policies found in migrations
     optional: false
@@ -523,8 +517,6 @@ requirements:
     name: model provider API key
     kind: model_key
     purpose: Only for intent capture and scenario wording. Scanning and running never use one.
-    enables:
-      - model_features
     locations: []
     detected_from: required by TestTrout
     optional: true
@@ -533,7 +525,6 @@ requirements:
     kind: supabase_anon_key
     purpose: Your deployment already has this. TestTrout does not need it — tests go through your app's
       interface and endpoints, not its database.
-    enables: []
     locations:
       - file: src/integrations/supabase/client.ts
         line: 4
@@ -544,7 +535,6 @@ requirements:
     kind: supabase_url
     purpose: Your deployment already has this. Only needed here if you want TestTrout to reset the database
       between runs.
-    enables: []
     locations:
       - file: src/integrations/supabase/client.ts
         line: 3
@@ -555,7 +545,6 @@ requirements:
     kind: third_party_key
     purpose: A third-party service. Intercepted during test runs, so a real key is rarely needed — but
       the app may refuse to start without one.
-    enables: []
     locations:
       - file: src/pages/Checkout.tsx
         line: 4

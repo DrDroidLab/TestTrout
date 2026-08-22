@@ -133,7 +133,7 @@ class LoginConfig(BaseModel):
     reasonably refuse to hand over.
 
     The cost is that every application's form is different. That is solved by
-    discovering it once: ``trout probe`` finds the fields and records the
+    discovering it once: ``trout look`` finds the fields and records the
     locators here, so the fragility is paid down at setup rather than on every
     run. Anything it gets wrong can be corrected by hand.
     """
@@ -152,7 +152,7 @@ class LoginConfig(BaseModel):
         "inferred from leaving the login screen, which is weaker.",
     )
     discovered: bool = Field(
-        default=False, description="Whether `trout probe` found these, or a human wrote them."
+        default=False, description="Whether `trout look` found these, or a human wrote them."
     )
 
     @property
@@ -209,7 +209,7 @@ class TestUser(BaseModel):
 class ExternalRule(BaseModel):
     """A third-party host to intercept during test runs.
 
-    Populated by ``trout scan`` from the SDKs it finds, so a test run cannot reach
+    Populated by ``trout look`` from the SDKs it finds, so a test run cannot reach
     a real payment processor without someone having explicitly removed the
     entry.
     """
@@ -239,50 +239,8 @@ class SubstitutionConfig(BaseModel):
     )
     external: list[ExternalRule] = Field(
         default_factory=list,
-        description="Third-party hosts to intercept. Populated by `trout scan`.",
+        description="Third-party hosts to intercept. Populated by `trout look`.",
     )
-
-
-class ModelProvider(StrEnum):
-    """Supported model providers.
-
-    ``kimi`` speaks the OpenAI wire format against a configurable base URL,
-    which also covers self-hosted and foundry-style deployments.
-    """
-
-    ANTHROPIC = "anthropic"
-    OPENAI = "openai"
-    KIMI = "kimi"
-
-
-class ModelConfig(BaseModel):
-    """Which model to use, and where to reach it."""
-
-    model_config = ConfigDict(extra="forbid", protected_namespaces=())
-
-    provider: ModelProvider = ModelProvider.ANTHROPIC
-    model: str | None = Field(
-        default=None, description="Defaults to the provider's recommended model when unset."
-    )
-    base_url: str | None = Field(default=None, description="Required for self-hosted endpoints.")
-    api_key: str | None = Field(default=None, description="Use an 'env:' reference.")
-    max_tokens: int = 8192
-    effort: str | None = Field(
-        default=None,
-        description=(
-            "Reasoning effort, for providers that support it: low | high | max. "
-            "Left unset uses the provider's default, which on kimi-k3 is 'max' — "
-            "accurate but slow enough to be painful for interactive commands."
-        ),
-    )
-    temperature: float | None = None
-    """Left unset by default, meaning "whatever the provider does".
-
-    Deliberately not zero. Reasoning models reject a caller-chosen temperature:
-    current Claude models return 400 for the parameter at all, and Moonshot's
-    kimi-k3 accepts only ``1``. Sending a sensible-looking ``0.0`` therefore
-    breaks the two providers most likely to be configured. Set this only for a
-    model you know accepts it."""
 
 
 class RunConfig(BaseModel):
@@ -298,10 +256,18 @@ class RunConfig(BaseModel):
         default=0, ge=0, description="Kept at zero: a retry hides the flake it should surface."
     )
     timeout_seconds: int = Field(default=60, ge=1)
+    samples: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Real values for route parameters, e.g. {'id': '7f3a'}. Supplied by the user "
+            "for routes the probe could not reach on its own. Committed: an id that "
+            "exists is not a secret, and the next person needs it too."
+        ),
+    )
 
 
 class ProjectConfig(BaseModel):
-    """What kind of application this is. Populated by ``trout scan``."""
+    """What kind of application this is. Populated by ``trout look``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -328,7 +294,6 @@ class Config(BaseModel):
     )
     test_users: list[TestUser] = Field(default_factory=list)
     substitution: SubstitutionConfig = Field(default_factory=SubstitutionConfig)
-    model: ModelConfig = Field(default_factory=ModelConfig)
     run: RunConfig = Field(default_factory=RunConfig)
 
     def entrypoint(self, name: str | None = None) -> Entrypoint | None:

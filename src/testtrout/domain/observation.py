@@ -103,15 +103,28 @@ class SelectorCandidate(BaseModel):
         from observation to locator is verifiable in one place.
         """
         if self.strategy is SelectorStrategy.TEST_ID:
-            return f"getByTestId({self.value!r})"
+            return f"getByTestId({_ts(self.value)})"
         if self.strategy is SelectorStrategy.ROLE:
-            name = f", name={self.name!r}" if self.name else ""
-            return f"getByRole({self.role!r}{name})"
+            # An options object, not a keyword argument. Emitting Python's
+            # `name='x'` produced TypeScript that threw ReferenceError before
+            # a single assertion ran, which failed every browser test written.
+            name = f", {{ name: {_ts(self.name)} }}" if self.name else ""
+            return f"getByRole({_ts(self.role or '')}{name})"
         if self.strategy is SelectorStrategy.LABEL:
-            return f"getByLabel({self.value!r})"
+            return f"getByLabel({_ts(self.value)})"
         if self.strategy is SelectorStrategy.TEXT:
-            return f"getByText({self.value!r})"
-        return f"locator({self.value!r})"
+            return f"getByText({_ts(self.value)})"
+        return f"locator({_ts(self.value)})"
+
+
+def _ts(value: str | None) -> str:
+    """A TypeScript single-quoted literal.
+
+    Not ``repr``: Python's escaping is close enough to look right and wrong
+    often enough to matter — an apostrophe in a button label is all it takes.
+    """
+    escaped = (value or "").replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+    return f"'{escaped}'"
 
 
 class ObservedScreen(BaseModel):

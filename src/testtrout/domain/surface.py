@@ -330,7 +330,7 @@ class ProjectInfo(BaseModel):
 
 
 class ScanResult(BaseModel):
-    """The complete output of ``trout scan``, serialised to ``.trout/surfaces.yaml``.
+    """The complete output of ``trout look``, serialised to ``.trout/surfaces.yaml``.
 
     Deterministic: the same repository at the same commit always produces a
     byte-identical result. That property is what makes the golden-file tests in
